@@ -1,0 +1,2069 @@
+﻿1. System Context and Requirements
+
+
+TMC needs a QR code-based system to control employee access at its factories and to produce monthly attendance data for payroll. This section describes the context of that system, its objectives and scope, and the functional and non-functional requirements we use as the basis for the architecture in the following sections.
+
+
+1.1. System Context
+
+
+1.1.1. Business Context
+
+
+TMC Manufacturing Joint Stock Company operates in the manufacturing sector and owns two factories: Binh Duong, with approximately 800 employees, and Long An, with approximately 600 employees. The company needs a single system that serves two purposes: it must control employee access to the workplace, and it must produce accurate monthly attendance data for payroll.
+
+
+Employees are identified by a personal QR code, displayed on their own smartphones through the company's mobile application, web portal or email system. Each factory has access gates equipped with a QR scanner and a turnstile. When an employee presents a QR code at a gate, the TMC system validates the code and requests the existing Turnstile Control System to unlock the gate. The access event, either an entry or an exit, is then recorded as an attendance transaction.
+
+
+At the end of each month, the attendance data is transmitted to the company's existing HR/Payroll System through its API. The data must be available for reconciliation before 12:00 PM on the first day of the following month. Payroll processing itself remains the responsibility of the HR/Payroll System.
+
+
+Based on the description, we identify the following architectural drivers. The heaviest load comes at shift changes, when each factory handles around 800 access transactions within 30 minutes while employees queue at the gates. The two factories are in different locations, so gates run at two sites while reports cover the whole company. Gate control and payroll already have their own systems, which TMC has to work with rather than replace. Finally, the system holds personal data about employees and their movements, so it falls under data privacy regulations.
+
+
+1.1.2. Context Diagram
+
+
+The diagram below shows the TMC system, the people who use it and the two existing systems it exchanges data with.
+
+
+  
+
+
+
+Gate control and payroll stay with the two existing systems. TMC only sends them data: an unlock command to the Turnstile Control System for each valid scan, and the monthly attendance data to the HR/Payroll System. Neither system will be modified, so all communication goes through their existing APIs.
+
+
+The table below lists these interfaces. It is based on the integration part of the description, together with the response time and reporting deadline stated in the requirements.
+
+
+
+
+Interface
+	Direction
+	Data exchanged
+	Frequency
+	Key constraint
+	Turnstile Control System API
+	TMC → Turnstile; result returned
+	Unlock command per gate and access event; execution result
+	Per access event (peak ≈ 800 per 30 min per factory)
+	Part of the ≤ 2 s response time at the kiosk
+	HR/Payroll System API
+	TMC → HR/Payroll; status returned
+	Monthly attendance data per employee; reconciliation status
+	Monthly (plus re-transmission when corrections are made)
+	Data available before 12:00 PM on day 1 of each month
+	Employee channels (mobile app, web portal, email)
+	TMC → Employee
+	Personal QR code; personal attendance records
+	On demand
+	Must work on employees' personal smartphones
+	
+
+1.1.3. Actors
+
+
+The description names six user groups. Together with the two existing systems, they are the actors of TMC. Each user group also becomes a role in the access control model (NFR-03).
+
+
+
+
+Actor
+	Type
+	Responsibilities in the system
+	Employee
+	Primary
+	Displays a personal QR code, checks in and out at gates, views personal attendance
+	Production Supervisor
+	Primary
+	Monitors attendance of the team under supervision
+	Security Guard
+	Primary
+	Monitors gate status, handles exceptions at gates, records manual attendance entries
+	HR Staff
+	Primary
+	Manages employee records and QR codes, generates attendance reports, exports and reconciles data with the HR/Payroll System
+	System Administrator
+	Primary
+	Configures gate stations, manages user accounts and roles, reviews audit logs, maintains system configuration
+	Executive Management
+	Primary
+	Views dashboards and summary reports for monitoring purposes
+	Turnstile Control System
+	Secondary (external system)
+	Opens and closes gates on request from the TMC system
+	HR/Payroll System
+	Secondary (external system)
+	Receives monthly attendance data for reconciliation and payroll processing
+	
+
+1.2. Project Objectives
+
+
+We consider the project successful when it meets the following objectives:
+
+
+
+
+ID
+	Objective
+	Success criterion
+	BO-1
+	Control physical access to both factories using employee QR codes
+	Only active employees with a valid QR code can pass a gate; every access attempt is logged
+	BO-2
+	Record every entry and exit as an accurate attendance transaction
+	No attendance record is lost during normal operation
+	BO-3
+	Deliver complete monthly attendance data to the HR/Payroll System on time
+	Data for each month is available for reconciliation before 12:00 PM on the first day of the following month
+	BO-4
+	Provide reporting and monitoring for supervisors, HR staff and management
+	Daily and monthly attendance reports are available per employee, department and factory
+	BO-5
+	Protect employee personal data and restrict system access to authorised users
+	All functions are protected by role-based access control; all sensitive actions are audited
+	BO-6
+	Establish an architecture that can evolve as new requirements are released
+	New gates, rules and features can be added with limited change to existing components; the architecture follows the SOLID principles and is documented in multiple views
+	
+
+1.3. Project Scope
+
+
+This phase covers the functions below. The scope will grow in later milestones as new requirements are released.
+
+
+
+
+In scope
+	Out of scope
+	Management of employee accounts and personal QR codes
+	Visitor management
+	Configuration and monitoring of gate stations in both factories
+	Payroll calculation; the TMC system only exports attendance data
+	QR code validation and gate unlocking through the existing Turnstile Control System
+	Direct control or replacement of turnstile hardware
+	Recording of attendance events (entry and exit)
+	Modification of the existing HR/Payroll System
+	Attendance reporting, audit logging and data export to the HR/Payroll System
+	Shift scheduling and leave management
+	System administration: users, roles, configuration
+	
+
+	
+
+1.4. Functional Requirements
+
+
+The description lists the key functional areas of the system. We break each area down into individual requirements:
+
+
+1.4.1. User and QR Code Management
+
+
+
+
+ID
+	Requirement
+	FR-UQ-01
+	The system shall allow HR staff to create, update and deactivate employee records, including employee ID, name, department and factory.
+	FR-UQ-02
+	The system shall issue a unique QR code bound to each active employee.
+	FR-UQ-03
+	The system shall allow employees to display their QR code through the mobile application or the web portal. Emails sent to employees shall contain a link that opens the QR code in the web portal rather than a QR image.
+	FR-UQ-04
+	The system shall allow HR staff to revoke and reissue an employee's QR code.
+	FR-UQ-05
+	QR codes displayed in the mobile application and the web portal shall be time-limited and refreshed automatically, so that a captured image of a code cannot be reused.
+	
+
+1.4.2. Gate Station Management
+
+
+
+
+ID
+	Requirement
+	FR-GS-01
+	The system shall allow administrators to register a gate station with its factory, location, direction (entry or exit), QR scanner and turnstile identifier.
+	FR-GS-02
+	The system shall allow administrators to enable and disable a gate station.
+	FR-GS-03
+	The system shall monitor the status of each gate station and notify security guards when a device becomes unavailable.
+	
+
+1.4.3. Attendance Event Recording
+
+
+
+
+ID
+	Requirement
+	FR-AT-01
+	The system shall validate a scanned QR code by checking that it is authentic, has not expired and belongs to an active employee authorised for that factory.
+	FR-AT-02
+	Upon successful validation, the system shall send an unlock request to the Turnstile Control System for the corresponding gate.
+	FR-AT-03
+	The system shall record each access event as an attendance transaction containing the employee, gate, factory, direction, timestamp and result.
+	FR-AT-04
+	The system shall record rejected access attempts together with the reason for rejection.
+	FR-AT-05
+	The system shall allow security guards to record an attendance entry manually, with a mandatory reason, when a QR scan cannot be completed.
+	FR-AT-06
+	Each gate station shall store access events locally when the central system is unreachable and synchronise them once the connection is restored.
+	
+
+1.4.4. Reporting and Auditing
+
+
+
+
+ID
+	Requirement
+	FR-RA-01
+	The system shall generate daily and monthly attendance reports per employee, department and factory.
+	FR-RA-02
+	The system shall allow employees to view their own attendance records.
+	FR-RA-03
+	The system shall allow production supervisors to view the attendance of their own team only.
+	FR-RA-04
+	The system shall transmit monthly attendance data to the HR/Payroll System through its API and display the transmission and reconciliation status.
+	FR-RA-05
+	The system shall retry a failed transmission automatically and notify HR staff if the data has not been delivered.
+	FR-RA-06
+	The system shall maintain an audit log of access events, data changes and administrative actions.
+	FR-RA-07
+	The system shall provide dashboards with summary attendance statistics for executive management.
+	
+
+1.4.5. System Administration
+
+
+
+
+ID
+	Requirement
+	FR-SA-01
+	The system shall allow administrators to manage user accounts and assign the roles Employee, Production Supervisor, Security Guard, HR Staff, System Administrator and Executive Management.
+	FR-SA-02
+	The system shall allow administrators to configure operational parameters, such as QR code validity and export schedule, without changing source code.
+	FR-SA-03
+	The system shall allow administrators to configure the connection settings of the Turnstile Control System and HR/Payroll System APIs.
+	
+
+1.5. Non-Functional Requirements
+
+
+The non-functional requirements of the TMC system are listed below.
+
+
+
+
+ID
+	Category
+	Requirement
+	Priority
+	NFR-01
+	Performance
+	The response time at the kiosk, from QR scan to gate unlock, shall not exceed 2 seconds under the current workload, including the peak of approximately 800 access transactions within 30 minutes per factory.
+	High
+	NFR-02
+	Reliability
+	No attendance record shall be lost during normal system operation. Every accepted access event shall be stored persistently.
+	High
+	NFR-03
+	Security
+	All functions shall be protected by role-based access control (RBAC), and all access events and administrative actions shall be recorded in an audit log.
+	High
+	NFR-04
+	Privacy
+	Employees' personal data shall be protected in compliance with applicable data privacy regulations. Personal data shall be encrypted in transit and at rest, and access to it shall be limited to authorised roles.
+	High
+	NFR-05
+	Interoperability
+	The complete attendance data of each month shall be available in the HR/Payroll System before 12:00 PM on the first day of the following month.
+	High
+	NFR-06
+	Availability
+	Gate stations shall remain operational throughout working hours, particularly at shift changes. A temporary loss of connection to the central system shall not prevent employees from passing through the gates.
+	High
+	NFR-07
+	Recoverability
+	Access events stored locally during a connection loss shall be synchronised automatically after the connection is restored, without loss or duplication.
+	High
+	NFR-08
+	Scalability
+	The system shall support an increase in the number of employees and the addition of new factories without architectural redesign.
+	Medium
+	NFR-09
+	Maintainability
+	New gates, rules and features shall be added through configuration or new modules with limited change to existing components, in accordance with the SOLID principles.
+	Medium
+	NFR-10
+	Usability
+	Checking in shall require only presenting a QR code. Management interfaces shall be usable by HR staff and supervisors without specialised training.
+	Medium
+	
+
+1.6. Use Case Model
+
+
+The use case diagram below shows what each actor does with the system.
+
+
+  
+
+
+
+1.7. Assumptions and Constraints
+
+
+1.7.1. Constraints
+
+
+Based on the system description, the following constraints apply:
+
+
+* CO-1. The TMC system shall integrate with the existing Turnstile Control System and HR/Payroll System through their APIs. The internal behaviour of these systems cannot be changed.
+* CO-2. Employees use their personal smartphones to display QR codes. No dedicated identification device is issued.
+* CO-3. The design shall adhere to the SOLID principles and shall be documented from multiple architectural views.
+* CO-4. Visitor management and payroll calculation are excluded from the current phase.
+
+
+1.7.2. Assumptions
+
+
+The description leaves some details open. Based on our analysis, we make the following assumptions and will confirm them with the stakeholders in later milestones:
+
+
+* AS-1. Each factory has several gate stations. Each gate station consists of a kiosk with a QR scanner connected to a turnstile.
+* AS-2. Arrivals at shift changes are not uniform. Most of the approximately 800 transactions per factory occur within a few minutes, so the peak rate is assumed to be three to five times the 30-minute average.
+* AS-3. Each employee generates at least two access events per working day. The expected volume is therefore about 2,800 transactions per day and about 75,000 transactions per month, assuming 26 working days.
+* AS-4. The network connection between a factory and the central system may be interrupted temporarily
+* AS-5. The Turnstile Control System of each factory is reachable from the gate stations over the factory’s local network. .
+
+
+
+
+2.1. Architecture Characteristics
+
+
+Based on the system context (two factories with approximately 1,400 employees, peak load of ~800 transactions within 30 minutes, mandatory integration with the existing HR/Payroll and Turnstile systems, and data privacy requirements), the following architecture characteristics are identified as the success criteria of the TMC system.
+
+
+2.1.1. Operational Architecture Characteristics
+
+
+
+
+Characteristic
+	Application to the TMC System
+	Importance
+	Difficulty
+	Performance
+	Kiosk response time <=2 seconds under peak load of approximately 800 transactions/30 minutes
+	High
+	High
+	Availability
+	Continuous operation during working hours, especially during shift changes
+	High
+	Medium
+	Reliability
+	No loss or incorrect recording of any attendance record during normal operation
+	High
+	High
+	Recoverability
+	Attendance data is preserved and can be synchronized after temporary connection loss
+	High
+	Medium
+	Scalability
+	Support future growth in number of employees or additional factories
+	Medium
+	Medium
+	Robustness
+	Correct handling of QR scanner failures, network interruptions, or unresponsive turnstiles
+	High
+	Medium
+	
+
+2.1.2. Structural Architecture Characteristics
+
+
+
+
+Characteristic
+	Application to the TMC System
+	Importance
+	Difficulty
+	Maintainability
+	New gates or attendance rules can be added/changed with minimal effort
+	Medium
+	Medium
+	Extensibility
+	Future features (e.g., shift management, overtime) can be added without major redesign
+	Medium
+	Medium
+	Configurability
+	Administrators can configure shifts, gates, and rules without code changes
+	Medium
+	Low
+	Supportability
+	Comprehensive audit logging of all attendance events and errors is available
+	High
+	Low
+	
+
+2.1.3. Cross-cutting Architecture Characteristics
+
+
+
+
+Characteristic
+	Application to the TMC System
+	Importance
+	Difficulty
+	Security
+	Full Role-Based Access Control (RBAC) and encryption of sensitive data
+	High
+	High
+	Privacy
+	Protection of employees’ personal data in compliance with applicable data privacy regulations
+	High
+	Medium
+	Authentication
+	Authentication of employee QR codes and system user accounts
+	High
+	Medium
+	Authorization
+	Role-based permissions for Employee, Supervisor, HR, Security, Admin, and Executive
+	High
+	Medium
+	Usability
+	Employees only need to display a QR code on their smartphone; management interfaces are simple and intuitive
+	Medium
+	Low
+	
+
+2.1.4. Prioritized Scenarios
+
+
+The following scenarios represent the prioritized success criteria of the TMC system. Each scenario is evaluated on importance to business success and difficulty of achievement.
+
+
+
+
+Characteristic
+	Success Scenario
+	Priority (Importance, Difficulty)
+	Performance
+	Under peak load of 800 check-ins within 30 minutes, kiosk response time remains under 2 seconds
+	High, High
+	Reliability
+	No attendance records are lost during normal system operation
+	High, High
+	Security
+	Only authorized users can access attendance data and personal information
+	High, High
+	Availability
+	Gates keep admitting employees and recording attendance during a temporary loss of connection to the central system 
+	High, Medium
+	Recoverability
+	Access events stored locally during a connection loss are synchronised automatically once the connection is restored, without loss or duplication 
+	High, Medium
+	Maintainability
+	A new gate can be added through configuration only, without modifying core code
+	Medium, Medium
+	
+
+
+
+3. Architecture Style
+Before analyzing the specific architecture styles, it is crucial to establish a common deployment baseline for the edge devices. Requirements FR-AT-06 and NFR-06 require every gate station to validate QR codes and store access events locally, whichever style is chosen for the central system. Offline operation is therefore handled by the gate stations in all candidates, and the analysis below compares the styles for the central system.
+3.1 Layered Architecture
+3.1.1 Core concept
+Layered Architecture is a pattern that organizes system components horizontally into logical layers. Each layer has a specific role and separation of concerns. The core principle is that the request flow goes top-down, where a layer is only allowed to communicate with the layer right below it for the closed layer or any layers below it for the open layer. 
+3.1.2 Impact on Architectural Characteristics
+1. Performance:
+Sequential processing across layers for peak load with 800 transactions for 30 minutes per factory is not massive but can accumulate latency. Every request must pass through each closed layer, including layers that add no logic for that request, so the fixed overhead per request is higher 
+2. Availability:
+Since edge devices are assumed to handle offline operations locally, central availability concerns shift to data synchronization. A network drop will halt real-time administrative workflows and delay historical data syncing, but local gates will remain.
+3. Reliability:
+        The synchronous top-down flow ensures an attendance record is saved under normal conditions. But a sudden network disconnection mid-flow can cause the transaction to fail, leading to lost attendance records.
+4. Recoverability:
+        Top-down logical architecture does not support offline sync mechanisms so external supporting patterns must be designed.
+5. Scalability:
+        Since all layers are bundled into a single application, specific functions cannot be scaled independently so to handle high QR scan traffic, the entire system must be scaled, wasting resources on unused features.
+6. Maintainability:
+        Layered Architecture creates clear boundaries by organizing code by technical function which allow to work simultaneously without interfering.
+7. Extensibility:
+        Simple configuration like adding new gates are easy but adding features often requires cross-layer modifications, increasing the risk of breaking existing code.
+8. Security:
+        Since all requests must pass through the top layers first, a centralized security filters can be set up to consistently enforce authentication and security rules before execute any business logic.
+9. Privacy:
+        Business layer ensuring the Presentation only receives necessary results without exposing raw personal data in the bottom layers.
+10. Supportability:
+        Requests move sequentially through the layers, error logs provide a clear, linear map of exactly where the process failed.
+3.1.3 Strengths and Weaknesses for TMC System:
+1. Strengths:
+Layered Architecture is ideal for administration and reporting features by clearly separating the processing flow, especially for System with heavy CRUD use cases like TMC System (User and QR Code Management, Gate Station Management,..). With requests flowing sequentially through layers, TMC System can establish a security filter at the API or Business layer to ensure RBAC and record Audit logs before allowing the request to proceed. This facilitates Privacy and Audit requirements.
+
+
+2. Weaknesses and trade offs:
+Sinkhole Anti-pattern may occur for simple flows like recording an Audit log, a request might pass through multiple layers without any significant logic processing at the Business layer, creating structural redundancy. Changing a requirement requires modifications across all layers, which negatively impacts Extensibility. Besides, layered request flow is sequential which can create latency coupling, threatening NFR-01.
+3.1.4 Critical Scenario Analysis:
+1. Employee Access:
+* Scenario flow: Employee scans QR -> QR Scanner/Gate Station (Presentation) -> Access validation (Business) -> Call Turnstile API (Integration) -> Record transaction (Data Access).
+* Performance (NFR-01): This flow relies on synchronous processing speed. If the Integration layer waits for a slow Turnstile API response, or the Data layer writes to the DB slowly, the entire top-down flow is blocked and may violate NFR-01.
+* Availability (NFR-06): NFR-06 requires the gates to keep operating when the connection to the central system is lost. A Layered Architecture requires a strict, continuous flow from the Presentation layer down to the Data layer. Since offline operation is handled locally by the gate, the Layered central system must process synchronized offline records once the network restores.
+2. Attendance Synchronization to HR/Payroll:
+* Scenario flow: Scheduled Trigger -> Aggregate Attendance data (Business) -> Format data (Integration) -> Call HR/Payroll System API.
+* Maintainability: The Business layer encapsulates the aggregation logic, while the Integration layer isolates the external API communication. If the HR system's API specifications change, modifications are contained within the Integration layer. 
+* Reliability & Recovery (NFR-05): NFR-05 requires guaranteed attendance data delivery to the HR/Payroll system by 12:00 PM. Layered Architecture executes flows in a synchronous, request-response manner. If the external HR API is temporarily unavailable the synchronous flow throws an exception and terminates. To achieve the automated retry and fault-tolerance required by NFR-05, the system is forced to introduce external components such as message queues or background workers that operate asynchronously outside the standard top-down layered flow.
+
+
+3.2 Modular Monolith
+3.2.1 Core concept
+Modular Monolith is an architecture style where the entire system is built and deployed as a single application unit, but divided into independent, domain-driven modules. Each module encapsulates its business logic and data state. Modular Monolith communicates via in-memory function calls or internal events, while maintaining strict clear interfaces to prevent structural coupling.
+
+
+3.2.2 Impact on Architectural Characteristics
+1. Performance:
+In-process communication between modules eliminates internal network latency overhead. This optimizes processing speed, making it capable of handling the peak load of 800 transactions within 30 minutes per factory.
+2. Availability:
+Although modularity isolates faults, the architecture is still deployed as a single process. A fatal runtime error acts as a Single Point of Failure that brings down the entire application.
+3. Reliability:
+Since all modules run in the same process and share a single database, traditional ACID transactions can be leveraged across modules. This ensures data integrity and no attendance records are lost.
+4. Recoverability:
+Modular Monolith does not natively support edge-device offline buffering or distributed synchronization.
+5. Scalability:
+Can be scaled horizontally by replicating the monolith across multiple servers. However, specific modules cannot be scaled independently leading to low elasticity.
+6. Maintainability:
+Domain boundaries make the codebase much easier to navigate and maintain compared to a traditional Layered architecture. Changes are isolated within specific modules, preventing the chain effect across the system.
+7. Extensibility:
+Adding new business capabilities involves creating a new module with its own API contract, causing minimal effects to existing core functions.
+8. Security:
+Authentication and RBAC (Role-Based Access Control) can be uniformly enforced at the entry point before routing requests to specific domain modules.
+9. Privacy:
+Modules like Attendance or Reporting only interact using identifiers, minimizing the exposure of raw personal data.
+10. Supportability:
+Application logs are centralized by default but can be easily filtered by module namespaces, making debugging and auditing easier.
+
+
+3.2.3 Strengths and Weaknesses for TMC System:
+1. Strengths:
+Modular Monolith offers high performance without distributed complexity. It can handle NFR-01 by avoiding network communication between internal services. Enforcing data consistency for NFR-02 is simplified using local database transactions. The domain separation supports extensibility, allowing to update HR export logic or admin reports without changing the code of the access flow.
+
+
+2. Weaknesses and trade-offs:
+Modifying a minor feature in the HR Integration module requires rebuilding and redeploying the entire system. This could cause outages at the factory gates. 
+
+
+3.2.4 Critical Scenario Analysis:
+1. Employee Access:
+* Scenario flow: Employee scans QR -> Gate Station Software validates locally -> Calls Turnstile API -> Stores the event locally -> Synchronises to the Attendance Module.
+* Performance (NFR-01): In-memory communication between the Access, Employee, and Attendance modules eliminates latency. The only external variable is the network call to the physical Turnstile API. 
+* Availability (NFR-06) : Since edge gates handle offline scans, the central Modular Monolith must process delayed records upon restoration. Processing these synchronized offline records synchronously can cause database spikes.
+2. Attendance Synchronization to HR/Payroll:
+* Scenario flow: Scheduled Trigger -> HR Integration Module -> Queries Attendance Module (in-process) -> Formats data -> Calls HR/Payroll System API (External).
+* Maintainability & Extensibility: If the external HR system changes its API payload specifications, modifications are strictly confined to the HR Integration Module. The Access Control and Attendance modules remain completely untouched.
+* Reliability & Recovery (NFR-05): NFR-05 requires guaranteed data delivery by 12:00 PM. While domain isolation protects other modules from HR API timeouts, the Monolith's internal processing remains synchronous by default. 
+3.3 Pipeline Architecture 
+3.3.1 Core concept
+Pipeline Architecture organizes data processing flows into a sequence of independent steps. The core components include Filters connected by Pipes . The defining characteristic of this style is its strict one-way data flow from a source to a sink. By breaking down massive processes into discrete operations, it allows architects to easily add, remove, or rearrange filters without impacting the internal logic of other components in the chain.
+
+
+3.3.2 Impact on Architectural Characteristics
+1. Performance:
+Data must be serialized and deserialized every time it passes through a pipe to the next filter. This accumulated structural overhead significantly for NFR-01.
+2. Availability:
+The system's availability depends on the implementation of the pipes. If a single filter crashes in a synchronous, in-memory pipeline, the entire flow stops. 
+3. Reliability:
+A pipeline lacks support for global state or distributed transactions. If an error occurs late in the pipeline, it is difficult to roll back actions taken by previous filters, which can be hard for NFR-02.
+4. Recoverability:
+If pipes are in-memory, a system crash causes complete data loss of payloads in transit. If pipes utilize persistent brokers , recoverability becomes more strong, as unprocessed data waits in the pipe.
+5. Scalability:
+If the Validation filter is CPU-intensive during shift changes, multiple instances of that specific filter can be spun up to drain the pipe faster.
+6. Maintainability:
+Code logic is decoupled into single-responsibility filters, making the codebase modular and easy to test.
+7. Extensibility:
+New business rules can be injected into the pipeline without modifying existing filters.
+8. Security:
+The data payloads traveling across multiple discrete components increases the internal attack area.
+9. Privacy:
+Employee information must flow through the pipes. Ensuring all intermediate pipes and filters encrypt and safely handle this data can lead to operational overhead.
+10. Supportability:
+Filters are stateless and lack shared context, tracking a failed request that died at some filter requires complex distributed tracing.
+
+
+3.3.3 Strengths and Weaknesses for TMC System:
+1. Strengths:
+Pipeline architecture is a perfect candidate for the HR/Payroll Sync flow. Its extensibility allows TMC to easily insert new Access Control rules in the future without risking regressions in existing code. 
+
+
+2. Weaknesses and trade-offs:
+Pipelines are designed for asynchronous, fire-and-forget unidirectional flows. However, Gate Station requires a synchronous, bidirectional response. Furthermore, if TMC needs to pass a new hardware attribute from the Gate down to the DB, the data contracts of all intermediate pipes and filters must be modified.
+
+
+3.3.4 Critical Scenario Analysis:
+1. Employee Access:
+* Scenario flow: QR Scanner Source -> Pipe -> Validation Filter -> Pipe -> Turnstile Integration Filter -> Pipe -> Attendance DB Sink.
+* Performance (NFR-01): The pipeline's structural requirement to serialize, transmit, and deserialize data between sequential filters accumulates latency. 
+* Reliability (NFR-02): The pipeline style lacks native transaction boundaries (ACID). If the Turnstile Filter successfully opens the physical gate, but the pipe to the Attendance DB Filter drops due to an error, the flow is severed mid-way. The gate opens, but the record is lost, with no built-in rollback mechanism.
+
+
+2. Attendance Synchronization to HR/Payroll:
+* Scenario flow: Extraction Filter (Reads DB) -> Pipe -> Transformation Filter (Formats payload) -> Pipe -> Transmission Filter (Calls HR API).
+* Maintainability & Extensibility: The domain data extraction, format transformation, and external API transmission are segregated. Adapting to future HR API schema changes only requires modifying the Filter.
+* Reliability & Recovery (NFR-05): By utilizing persistent message queues as pipes, if the external HR API goes down, the Transmission Filter will fail, but the pre-formatted data remains safely buffered in the preceding pipe. Once the HR system recovers, the filter resumes processing from the pipe without needing to restart
+
+
+3.4 Microkernel Architecture
+3.4.1 Core concept
+Microkernel Architecture is a fundamental division of the system into core system and plug-in modules. The core system contains only the logic required to keep the application running, along with a mechanism to orchestrate the plug-ins. The plug-in modules are standalone, independent components containing specialized business rules, logic, or integration adapters.
+
+
+3.4.2 Impact on Architectural Characteristics
+1. Performance:
+Because the core and plug-in modules run in the same application process, the architecture avoids network latency overhead. 
+2. Availability:
+A critical failure in the Core itself acts as a Single Point of Failure (SPOF).
+3. Reliability:
+Ensuring transactional integrity (ACID) is feasible but depends heavily on the strictness of the core and plugin. If a plugin interacts with the database directly instead of yielding state back to the Core, maintaining data consistency becomes complex.
+4. Recoverability:
+Microkernel does not provide offline buffering or data recovery capabilities.
+5. Scalability:
+Scaling requires replicating the entire Core System and all its plugins.
+6. Maintainability:
+Code maintainability is high because custom validation rules and third-party API integrations are completely abstracted away from the Core processing flow.
+7. Extensibility:
+Adding support for new hardware involves writing a new plugin matching the Core's interface contract.
+8. Security:
+The Core can enforce Authentication and RBAC before push the payload to any business plug-in.
+9. Privacy:
+The Core can be designed to encrypt before passing the payload to external integration plugins, ensuring strict data privacy.
+10. Supportability:
+Debugging a failed request requires registry and contract logging to identify exactly which version of which plugin failed.
+
+
+3.4.3 Strengths and Weaknesses for TMC System:
+1. Strengths:
+By isolating hardware integrations, Microkernel Architecture aligns with TMC CO-1. If the company replaces its HR software in the future, the developers can change the HR plugin without touching the core attendance tracking logic.
+
+
+2. Weaknesses and trade-offs:
+The Core and plug-ins must communicate via interface contracts. If the business evolves and requires a new data field , the Core's contract must be modified, which breaks all existing plugins and forces a massive refactoring. Additionally, it suffers from the same network dependency vulnerabilities as Layered Architecture when deployed centrally.
+
+
+3.4.4 Critical Scenario Analysis:
+1. Employee Access:
+* Scenario flow: QR Scanner sends payload -> Core System -> Core Registry resolves validation plugin -> Core resolves turnstile plugin -> Core commits to Attendance DB.
+* Performance (NFR-01): The local registry resolution and in-process execution are high performance. The only latency is the final call from the plugin to the physical Turnstile API. 
+* Availability (NFR-06): Since edge operations continue, the central Core System must synchronize offline records when the network recovers. The Core must process these events without triggering real-time Turnstile plugins.. 
+2. Attendance Synchronization to HR/Payroll:
+* Scenario flow: Scheduled Trigger in Core -> Core aggregates monthly data -> Passes payload to HR plugin -> Plugin formats and executes HR/Payroll API call.
+* Maintainability & Extensibility: The Core is completely oblivious to the HR system's API schema. The logic for transforming attendance data into HR-compliant formats is encapsulated inside the HR plugin.
+* Reliability & Recovery (NFR-05): In this architecture, a plugin is a stateless worker. If the HR API times out, the HR plugin fails and throws an exception back to the Core System. 
+
+
+3.5 Service-Based Architecture
+3.5.1 Core concept
+Service-Based Architecture is a distributed architectural style that partitions a system into a small number of services grouped by business domain. The difference from Microservices is that these domain services share a single, centralized monolithic database. Services communicate with UI or external integrations via network protocols, via REST APIs or message brokers, combining the deployment flexibility of distributed systems with the data simplicity of monolith.
+
+
+3.5.2 Impact on Architectural Characteristics
+1. Performance:
+Compared to a monolith, this distributed setup requires more network hops but the macro distributed nature avoids the massive internal network connection seen in microservices. However, shared schemas in database can lead to latency bottlenecks, affecting the NFR-01.
+2. Availability:
+Macro distributed modularity ensures runtime fault isolation. A crash or memory leak in another service will not bring down the Access Control Service. However, the shared database is still a Single Point of Failure (SPOF) for the entire system.
+3. Reliability:
+By relying on a shared database, the system easily utilizes ACID transactions across different business domains. This guarantees data integrity and ensures no attendance records are lost for NFR-02.
+4. Recoverability:
+As a server-side distributed architecture, it lacks mechanisms for edge-device data buffering or synchronization.
+5. Scalability:
+Unlike monolithic, this architecture allows independent, elastic scaling of specific services. The Access Control Service can be scaled horizontally to handle shift-change loads without allocating unnecessary compute resources to the other modules.
+6. Maintainability:
+The codebase is divided into logical and physical domains, making it easier to navigate, test, and deploy compared to a Monolith.
+7. Extensibility:
+Adding new services is straightforward. However, the shared database can be high coupling, modifying a core schema often requires coordinated, simultaneous deployments of multiple services to avoid breaking data contracts.
+8. Security:
+Each service can enforce its own security and RBAC.
+9. Privacy:
+Personal Information is managed within the shared database, allowing for uniform encryption and access must be audited.
+10. Supportability:
+Tracing requests requires centralized log across the distributed services.
+
+
+3.5.3 Strengths and Weaknesses for TMC System:
+1. Strengths:
+Service-Based Architecture perfectly balances distributed scalability with complexity. Because TMC's peak load with 800 access transactions / 30 mins / factory is concentrated in the QR scanning flow, this architecture style allows elastic scaling of the Access Control Service during shift changes. The shared database solves the data integrity requirement NFR-02 by utilizing ACID transactions, avoiding the complexity of distributed data management. 
+2. Weaknesses and trade-offs:
+Because all services hit a single DB, a heavy administrative report query executed could lock tables or exhaust database I/O. This affects the Kiosk response SLA NFR-01 for the Access Service trying to write attendance logs. Furthermore, the architecture suffers from data coupling where changes to the shared schema require coordinated deployments across teams.
+
+
+3.5.4 Critical Scenario Analysis:
+1. Employee Access:
+* Scenario flow: QR Scanner sends payload -> Access Control Service -> Queries Shared DB for validation -> Calls Turnstile API (External) -> Commits to Shared DB.
+* Performance (NFR-01): Unlike a monolithic application, this distributed flow has multiple network hops from the edge Kiosk to the Access Service, down to the Shared Database, and outward to the physical Turnstile API. During the peak load, any degradation in the shared database's I/O performance will accumulate latency across these hops.
+* Availability (NFR-06): Because local gates handle offline validation, the Access Control Service must synchronize offline records once the connection restores. This requires the service to distinguish between live requests and historical syncs without overwhelming the Shared Database. 
+
+
+2. Attendance Synchronization to HR/Payroll:
+* Scenario flow: Scheduled Trigger -> Administration & HR Service -> Queries Shared DB -> Aggregates & Formats -> Calls HR/Payroll System API (External).
+* Decoupling & Isolation: The resources and processing threads required to extract, format, and transmit large batches of monthly attendance data are strictly isolated within the Administration & HR Service.
+* Reliability & Recovery (NFR-05): If the external HR API times out or returns an error, the failure is fully contained within the Administration Service. 
+
+
+3.6 Event-Driven Architecture
+3.6.1 Core concept
+Event-Driven Architecture is a distributed, asynchronous architectural style where independent software components communicate by producing, detecting, and consuming events. The system relies on event producers, event brokers and event consumers. Event-Driven Architecture is extreme decoupling via the fire-and-forget paradigm, a producer publishes an event without any knowledge of who will process it, when it will be processed or what the outcome will be.
+
+
+3.6.2 Impact on Architectural Characteristics
+1. Performance:
+Event-Driven Architecture provides throughput for handling massive loads by absorbing requests into message queues. However, single-request latency degrades compared to monolithic styles due to the structural overhead of network hops and broker processing.
+2. Availability:
+Decoupling creates fault tolerance. If the consumer crashes, it does not bring down other consumers or the event broker, allowing the system to remain available for core operations.
+3. Reliability:
+The durability of event brokers ensures that messages are persistently stored. This guarantees that no attendance events are lost for NFR-02 even if databases are temporarily down.
+4. Recoverability:
+The architecture is designed to handle disconnected states. If a consumer disconnects, events queue safely in the broker and automatically synchronize once connection is restored.
+5. Scalability:
+ Consumers can be scaled elastically and independently. During shift changes, the system can scale up to drain backlog queues rapidly.
+6. Maintainability:
+While individual consumer codebases are small, single-purpose, and easy to test, the overall system behavior (often utilizing Event Choreography) becomes highly fragmented and conceptually difficult to trace.
+7. Extensibility:
+New business capabilities can be added transparently without modifying a single line of the core flow codebase.
+8. Security:
+Requires stringent security configurations at the Event Broker level, including strict Authentication/Authorization (ACLs) dictating which services are allowed to publish or subscribe to specific topics.
+9. Privacy:
+Personal Information flowing through event payloads must be encrypted both in transit and at rest within the broker to prevent unauthorized consumers reading the data.
+10. Supportability:
+Since the logical flow is asynchronous and distributed, mandatory implementation of tracing is required to debug exactly.
+
+
+3.6.3 Strengths and Weaknesses for TMC System:
+1. Strengths:
+Event-Driven Architecture offers unparalleled support for system resilience and data integrity in NFR-02. Its inherent buffer capabilities make it resistant to traffic spikes. The architecture's retry mechanisms can reduce the need to write custom fault-tolerance logic. 
+2. Weaknesses and trade-offs:
+Event-Driven Architecture is asynchronous, forcing a synchronous response out of an asynchronous architecture requires implementing a complex messaging pattern where the Kiosk publishes an event, blocks its thread, and waits for a specific reply event. Furthermore, the system must accept administrative reports that might slightly slow behind real-time gate events.
+
+
+3.6.4 Critical Scenario Analysis:
+1. Employee Access:
+* Scenario flow: QR Scanner publishes access request event -> Broker -> validation consumer processes and publishes passed event -> Broker -> turnstile consumer calls API and publishes open event -> Broker -> consumer logs to DB.
+* Performance (NFR-01): Routing messages back and forth through the broker across multiple consumers accumulates network latency. 
+* Availability and Recoverability (NFR-06, NFR-07): Event-Driven Architecture properties provide a solution when deployed topologically at the edge. By placing a local  broker directly at the factories, a disconnection may cause the edge Kiosk to publish events to the local broker. The local validation consumer processes the event and opens the gate offline. Since offline operations are managed locally, the central broker queues the burst of offline events synchronized from the gate stations, preventing the central consumers from being overloaded during network recovery.
+
+
+2. Attendance Synchronization to HR/Payroll:
+* Scenario flow: scheduler publishes sync event -> Broker -> HR consumer aggregates data and pushes to HR API.
+* Failure Isolation & Recovery (NFR-05): If the HR API times out, the broker automatically pushes it to a Dead Letter Queue or retries cyclically, ensuring delivery before 12:00 PM without complex custom retry logic.
+
+
+3.7 Comparative analysis
+
+
+Architecture Characteristic
+	Layered
+	Modular Monolith
+	Pipeline
+	Microkernel
+	Service-Based
+	Event-Driven
+	Performance
+	Medium
+	High
+	Low
+	High
+	Medium
+	Medium
+	Availability
+	Low
+	Medium
+	Depends
+	Medium
+	High
+	High
+	Reliability
+	Low
+	High
+	Low
+	Medium
+	High
+	High
+	Recoverability
+	Low 
+	Low
+	Medium
+	Low
+	Low
+	High
+	Scalability
+	Low
+	Low
+	Medium
+	Low
+	High
+	High
+	Maintainability
+	High
+	High
+	High
+	High
+	High
+	Medium
+	Extensibility
+	Medium
+	High
+	High
+	High
+	Medium
+	High
+	Security
+	High
+	Medium
+	Medium
+	High
+	High
+	Medium
+	Privacy
+	High
+	High
+	Low
+	High
+	High
+	Medium
+	Supportability
+	High
+	High
+	Low
+	Medium
+	Medium
+	Low
+	
+
+3.8 Architecture Selection
+After a comprehensive evaluation, a Modular Monolith architecture is selected for the central system, complemented by edge processing at the gate stations.
+While a Service-Based Architecture offers better scalability, TMC’s peak load does not justify the operational overhead of a distributed system. A Modular Monolith domain-driven structural clarity but utilizes in-process method calls instead of network hops. This eliminates internal network latency, ensuring the system consistently meets the strict 2-second kiosk response SLA. Additionally, enforcing strict data ownership within a shared database is significantly easier and safer within a single compiled codebase, preventing data coupling.
+4. Logical Architecture
+The logical architecture of TMC consists of a central application divided into six domain modules, and a gate station software component that runs at every gate. Each module contains components named after what they do. The logical architecture describes these components and how they interact, independently of where they are deployed. We derive it with the component identification flow: identify the initial components, assign requirements to them, analyse roles and responsibilities, analyse the architecture characteristics, and restructure the components.
+4.1. Step 1: Identify initial components
+The initial components depend on the top-level partitioning. We use domain partitioning, because the selected style is a Modular Monolith and because new requirements will arrive by business area. With technical partitioning, each new requirement would cut across every layer.
+The five functional areas of Section 1.4 give the initial components.
+Initial component
+	Source
+	User and QR Code Management
+	Section 1.4.1
+	Gate Station Management
+	Section 1.4.2
+	Attendance Event Recording
+	Section 1.4.3
+	Reporting and Auditing
+	Section 1.4.4
+	System Administration
+	Section 1.4.5
+	This first set is only a starting point. The following steps test it against the requirements, the actors and the architecture characteristics.
+4.2. Step 2: Assign requirements to components
+Each functional requirement of Section 1.4 is assigned to an initial component to see how well it fits.
+Initial component
+	Requirements assigned
+	User and QR Code Management
+	FR-UQ-01 to FR-UQ-05
+	Gate Station Management
+	FR-GS-01 to FR-GS-03
+	Attendance Event Recording
+	FR-AT-01 to FR-AT-06
+	Reporting and Auditing
+	FR-RA-01 to FR-RA-07
+	System Administration
+	FR-SA-01 to FR-SA-03
+	The assignment shows three problems with the initial set:
+* Attendance Event Recording has two different jobs. Validating a code, unlocking the gate and storing events locally (FR-AT-01, FR-AT-02, FR-AT-06) happen at the gate. Keeping the attendance transactions and manual entries (FR-AT-03, FR-AT-04, FR-AT-05) is central record keeping.
+* Reporting and Auditing contains an integration task. Transmitting data to the HR/Payroll System and retrying on failure (FR-RA-04, FR-RA-05) is communication with an external system, not reporting.
+* No component owns access control. Authentication and role-based authorisation (NFR-03) apply to every function, so they do not belong to any single functional area.
+4.3. Step 3: Analyse roles and responsibilities
+We use the actor/actions approach. For each actor of Section 1.1.3, we list the actions it performs, taken from the use cases of Section 1.6, and the initial component that serves each action. "System" is added as an actor for the actions that the system starts by itself.
+Actor
+	Action
+	Initial component
+	Employee
+	Display QR code
+	User and QR Code Management
+	Employee
+	Check in / Check out
+	Attendance Event Recording
+	Employee
+	View own attendance
+	Reporting and Auditing
+	Security Guard
+	Record manual attendance
+	Attendance Event Recording
+	Security Guard
+	Monitor gate status
+	Gate Station Management
+	Production Supervisor
+	View team attendance
+	Reporting and Auditing
+	HR Staff
+	Manage employees and QR codes
+	User and QR Code Management
+	HR Staff
+	Generate monthly report
+	Reporting and Auditing
+	HR Staff
+	Export attendance data
+	Reporting and Auditing
+	System Administrator
+	Manage gate stations
+	Gate Station Management
+	System Administrator
+	Manage users and roles
+	System Administration
+	System Administrator
+	Maintain system configuration
+	System Administration
+	System Administrator
+	View audit logs
+	Reporting and Auditing
+	Executive Management
+	View dashboard
+	Reporting and Auditing
+	System
+	Refresh time-limited QR codes
+	User and QR Code Management
+	System
+	Validate QR code and request unlock
+	Attendance Event Recording
+	System
+	Store access events locally and synchronise them
+	Attendance Event Recording
+	System
+	Monitor gate stations and notify security guards
+	Gate Station Management
+	System
+	Transmit monthly data, retry and notify HR staff
+	Reporting and Auditing
+	System
+	Record audit log
+	Reporting and Auditing
+	Every action has an owning component, so no component is missing. The table gives three findings:
+* The initial components are too coarse. Reporting and Auditing alone serves eight unrelated actions for five actors and the system. One component per functional area would become a dumping ground for unrelated functions, which is the entity trap. Each area must be divided into components named after what they do.
+* The findings of Step 2 are confirmed. The gate-side actions of Attendance Event Recording are started by a scan at the gate, while manual attendance is entered by a security guard in the central system. Exporting and transmitting data to the HR/Payroll System stands apart from the read-only views of Reporting and Auditing.
+* Each external system is used by one group of actions only. The Turnstile Control System is used only when a gate is unlocked, and the HR/Payroll System only by the monthly export, so each can be isolated behind a single adapter.
+4.4. Step 4: Analyse architecture characteristics
+The architecture characteristics of Section 2 are checked against the components, because they can change how the components must be divided.
+Characteristic
+	Requirement
+	Impact on the components
+	Performance
+	NFR-01
+	The path from scan to unlock must be short: validate at the gate and call the turnstile, with no round trip to the central application.
+	Availability
+	NFR-06, FR-AT-06
+	Validation and unlocking cannot exist only in the central application. A gate-side component with its own storage is required.
+	Recoverability
+	NFR-07
+	The gate-side component needs a part that synchronises stored events, and the central side must accept each event only once.
+	Reliability
+	NFR-02
+	An event is stored at the gate before the unlock request is sent, and stored again centrally after synchronisation.
+	Robustness
+	FR-GS-03, FR-AT-04
+	Gate failures must be visible. The gate reports its status, a central component monitors it and notifies security guards, and failed or rejected attempts are stored with a reason.
+	Scalability
+	NFR-08
+	A new factory adds gate station instances and configuration only. The central modules contain no logic that is specific to one factory.
+	Interoperability
+	NFR-05, FR-RA-05, CO-1
+	The export needs its own scheduling, retry and status tracking, separate from reporting. Each external system is reached through one adapter.
+	Security, Authentication, Authorization
+	NFR-03
+	All requests pass one entry point that authenticates the user and checks the role before any module is reached.
+	Privacy
+	NFR-04
+	Personal data is owned by one module; the other modules refer to employees by employee ID.
+	Maintainability, Extensibility
+	NFR-09
+	Modules interact only through interfaces, so a new rule or feature is added as a new component or module.
+	Configurability
+	FR-SA-02, FR-SA-03
+	Operational parameters are held by one configuration component that all modules read.
+	Supportability
+	FR-RA-06
+	One audit log component receives audit events from all modules.
+	4.5. Step 5: Restructure components
+The findings of Steps 2 to 4 lead to six changes to the initial set.
+No.
+	Change
+	Reason
+	1
+	Split Attendance Event Recording into Gate Station Software, which runs at each gate, and the Attendance module in the central application.
+	Two different jobs (Steps 2 and 3); NFR-06, NFR-01
+	2
+	Divide Gate Station Software into four parts: QR Validator, Local Store, Turnstile Adapter and Sync Client.
+	One responsibility per part; NFR-02, NFR-07, CO-1
+	3
+	Extract an HR Integration module from Reporting and Auditing. It contains the Export Job and the HR/Payroll Adapter.
+	Integration task (Steps 2 and 3); NFR-05, FR-RA-05
+	4
+	Add an API Entry Point in front of all modules for authentication and role-based authorisation.
+	No owner for access control (Step 2); NFR-03
+	5
+	Divide every module into components named after what they do, for example Event Intake, Manual Entry and Attendance Query in the Attendance module.
+	Initial components too coarse (Step 3); avoids the entity trap
+	6
+	Shorten the module names: Employee and QR Code, Gate Station Management, Attendance, Reporting and Audit, Administration, and HR Integration.
+	Same names as in Section 6
+	Component design is iterative. This structure will be reviewed again when new requirements are released in later milestones.
+4.6. Resulting logical architecture
+Figure 4.1 shows the logical architecture after restructuring. Together, the components below cover all 24 functional requirements of Section 1.4.
+[Insert Figure 4.1: TMC logical architecture (draw.io diagram)]
+Components of the central application
+Module
+	Component
+	Responsibility
+	Requirements
+	(entry)
+	API Entry Point
+	Authenticates users, checks roles and routes each request to the owning module
+	NFR-03
+	Employee and QR Code
+	Employee Records
+	Creates, updates and deactivates employee records
+	FR-UQ-01
+	Employee and QR Code
+	QR Issuing
+	Issues, revokes and reissues the QR credential of an employee; provides revocations and verification keys to the gates
+	FR-UQ-02, FR-UQ-04
+	Employee and QR Code
+	QR Display
+	Generates the time-limited, signed QR code shown in the mobile application and web portal, and refreshes it; emails contain only a link to the web portal
+	FR-UQ-03, FR-UQ-05
+	Gate Station Management
+	Gate Registry
+	Registers, enables and disables gate stations; provides the gate configuration
+	FR-GS-01, FR-GS-02
+	Gate Station Management
+	Gate Monitoring
+	Tracks the status reported by each gate and notifies security guards when a device becomes unavailable
+	FR-GS-03
+	Attendance
+	Event Intake
+	Receives access events from the gates, accepts each one only once and stores them as attendance transactions, including rejected attempts
+	FR-AT-03, FR-AT-04, NFR-07
+	Attendance
+	Manual Entry
+	Lets security guards record an attendance entry with a mandatory reason
+	FR-AT-05
+	Attendance
+	Attendance Query
+	Read-only interface to attendance transactions for the other modules
+	Supports FR-RA-01 to FR-RA-04
+	Reporting and Audit
+	Attendance Views
+	Shows employees their own attendance and supervisors the attendance of their team
+	FR-RA-02, FR-RA-03
+	Reporting and Audit
+	Reports and Dashboards
+	Daily and monthly reports per employee, department and factory; dashboards for executive management
+	FR-RA-01, FR-RA-07
+	Reporting and Audit
+	Audit Log
+	Append-only record of access events, data changes and administrative actions
+	FR-RA-06, NFR-03
+	HR Integration
+	Export Job
+	Starts the monthly export on schedule, retries a failed transmission, tracks its status, notifies HR staff and allows a re-transmission
+	FR-RA-04, FR-RA-05, NFR-05
+	HR Integration
+	HR/Payroll Adapter
+	Formats the data and transmits it through the HR/Payroll System API; returns the status
+	FR-RA-04, CO-1
+	Administration
+	User and Role Management
+	Manages user accounts and assigns the six roles
+	FR-SA-01
+	Administration
+	System Configuration
+	Holds operational parameters and the connection settings of the external APIs
+	FR-SA-02, FR-SA-03
+	(data)
+	Shared Database
+	One database for all modules; each table is owned by exactly one module
+	NFR-02
+	Parts of the Gate Station Software
+Part
+	Responsibility
+	Requirements
+	QR Validator
+	Checks signature, expiry, employee status and factory, using the reference data in the Local Store
+	FR-AT-01
+	Local Store
+	Holds access events until they are synchronised, and the reference data needed for validation: employee status, revocations, verification keys and gate configuration. Its content is encrypted.
+	FR-AT-06, NFR-02, NFR-04
+	Turnstile Adapter
+	Sends the unlock request to the Turnstile Control System and returns the result
+	FR-AT-02, CO-1
+	Sync Client
+	Uploads pending events and the gate status; downloads the reference data
+	NFR-07, FR-GS-03
+	Interactions between components
+From
+	To
+	Purpose
+	Mobile App, Web Portal
+	API Entry Point
+	All user requests
+	Sync Client
+	API Entry Point
+	Uploads access events to Event Intake and gate status to Gate Monitoring; downloads reference data from Employee Records, QR Issuing and Gate Registry
+	Reporting and Audit
+	Attendance, Employee and QR Code, Gate Station Management
+	Read-only queries through the module interfaces
+	Export Job
+	Attendance Query
+	Read-only query for the monthly attendance data
+	HR/Payroll Adapter
+	HR/Payroll System
+	Transmits monthly data, receives status
+	QR Scanner
+	QR Validator
+	Scanned QR code
+	QR Validator
+	Local Store
+	Reads reference data, stores the access event
+	QR Validator
+	Turnstile Adapter
+	Unlock request
+	Turnstile Adapter
+	Turnstile Control System
+	Unlock request, execution result
+	All modules
+	Audit Log
+	Publish audit events
+	All modules
+	System Configuration
+	Read settings
+	A module uses another module only through its public interface or through published events, never through its internal classes or tables.
+4.7. Key flows
+Two flows show how the components work together.
+Employee check-in or check-out
+1. The employee presents a QR code at the QR scanner of a gate.
+2. The QR Validator checks the signature, the expiry time, the employee status and the factory, using the reference data in the Local Store.
+3. The QR Validator stores the access event in the Local Store, whether it is accepted or rejected, with the reason for a rejection.
+4. If the code is valid, the Turnstile Adapter sends the unlock request to the Turnstile Control System, and the result is added to the stored event.
+5. The Sync Client uploads the event when the connection is available. Event Intake stores it as an attendance transaction and ignores an event it has already received.
+6. Event Intake publishes an audit event to the Audit Log.
+Steps 1 to 4 need no connection to the central application, so the gate keeps working during a connection loss (NFR-06).
+Monthly export to the HR/Payroll System
+1. The Export Job starts according to the schedule held in System Configuration.
+2. The Export Job reads the attendance data of the month through Attendance Query.
+3. The HR/Payroll Adapter transmits the data through the HR/Payroll System API and returns the status, which the Export Job records.
+4. If the transmission fails, the Export Job retries automatically. If the data is still not delivered, it notifies HR staff (FR-RA-05).
+5. HR staff see the transmission and reconciliation status and can start a re-transmission.
+
+
+Logical Diagram:
+  
+
+Link to draw.io: https://drive.google.com/file/d/1n4FqaLKHa5mFyVQPJIJVbrs7lhxO59Ut/view?usp=sharing
+5. Physical Architecture
+
+
+TMC is deployed on one central data centre and two factory sites. The central data centre runs the Modular Monolith on two application servers behind a load balancer, with a primary and a standby database. At each factory, every gate has its own kiosk that validates QR codes, stores access events and unlocks the turnstile over the factory LAN. The kiosks synchronise with the central data centre over a VPN. This deployment is chosen for four reasons:
+
+
+* Fast and independent gates. The path from scan to unlock stays inside the factory, so the response time does not depend on the WAN or on the load of the central system, and gates keep working when the central site is unreachable.
+* No single point of failure. Every central node is duplicated, and every access event is stored at the gate before it is sent to the central database.
+* Low operational cost. The load is modest, so a small number of nodes is sufficient. The design is simple to operate and can grow by adding servers or factory sites.
+* Defence in depth. Firewalled zones, a VPN between sites and encryption on every link and data store protect personal data.
+
+
+We derive this architecture in four steps: identify the deployment drivers, define the deployment units, select the nodes, and define the network links.
+
+
+5.1. Step 1: Identify the deployment drivers
+
+
+The requirements and decisions below determine where components must run.
+
+
+
+
+Driver
+	Physical consequence
+	Two factories at different locations, one company-wide data set
+	One central site, and one identical deployment per factory, connected over a WAN
+	Gates must keep working when the central system is unreachable
+	Gate software runs on a device at each gate, on the factory network
+	The Turnstile Control System already exists at each factory
+	Gates call the Turnstile API over the factory LAN, not over the WAN
+	Peak of about 800 transactions in 30 minutes per factory
+	About 2.2 events per second per factory at a five-fold burst. Two servers are sufficient; they are duplicated for availability, not for throughput
+	No loss of attendance records
+	Persistent storage at every gate; a replicated central database with backups
+	RBAC, audit and personal data protection
+	Firewalled zones, encrypted links and encrypted storage
+	Existing HR/Payroll System and email system
+	Reached from the central application over the corporate network
+	Employees use personal smartphones
+	The Mobile App and the Web Portal reach the system over the Internet
+	
+
+
+
+We also consider the following assumptions:
+
+
+* AS-6. The Turnstile Control System of each factory is reachable from the gate stations over the factory LAN.
+* AS-7. TMC hosts the central system in its own data centre, connected to both factories by a WAN. No component depends on this choice, so the same design can be moved to a private cloud.
+
+
+5.2. Step 2: Define the deployment units
+
+
+Each logical component is packaged into one deployment unit.
+
+
+
+
+Deployment unit
+	Logical components (Section 4.6)
+	Instances
+	tmc-central
+	API Entry Point and the six modules
+	2, one per application server
+	Gate Software
+	QR Validator, Local Store, Turnstile Adapter, Sync Client
+	1 per gate
+	tmc_db
+	Shared Database
+	1 primary, 1 standby
+	Web Portal
+	Web Portal client
+	Served by the load balancer, runs in the browser
+	Mobile App
+	Mobile App client
+	1 per employee smartphone
+	
+
+
+
+tmc-central and Gate Software form two architecture quanta. Each is deployed independently and has different characteristics: the gate quantum must answer within 2 seconds and keep working offline, while the central quantum must keep all records and serve reports. They are coupled only by the Sync Client, which runs outside the unlock path, so a failure in one quantum does not stop the other.
+
+
+5.3. Step 3: Select the nodes
+
+
+
+
+Node
+	Location
+	Quantity
+	Deployed software
+	Purpose
+	Firewall
+	Data centre; each factory
+	1 per site
+	VPN gateway
+	Controls zone boundaries; terminates the site-to-site VPN
+	Load Balancer
+	Data centre
+	2 (active-passive)
+	Nginx
+	Terminates TLS, distributes requests, serves the Web Portal
+	App Server
+	Data centre
+	2 (active-active)
+	tmc-central
+	Runs the Modular Monolith; each server can carry the full load
+	DB Primary, DB Standby
+	Data centre
+	1 + 1
+	PostgreSQL
+	Synchronous replication; the standby is promoted if the primary fails
+	Backup Storage
+	Data centre
+	1
+	—
+	Daily encrypted backups and transaction log archive
+	NTP Server
+	Data centre
+	1
+	—
+	Time source for the gate kiosks, required to check QR expiry
+	Gate Kiosk
+	Each gate
+	1 per gate
+	Gate Software, encrypted SQLite
+	Validates QR codes, stores events and unlocks the gate locally
+	QR Scanner
+	Each gate
+	1 per gate
+	—
+	Reads the QR code; connected to the kiosk by USB
+	LAN Switch
+	Each factory
+	1 or more
+	—
+	Connects kiosks, the Turnstile Controller and the firewall
+	Turnstile Controller, Turnstile
+	Each factory
+	Existing
+	Existing
+	Opens the gate on request
+	HR/Payroll Server, Mail Server
+	Corporate network
+	Existing
+	Existing
+	Receive the monthly export and outgoing email
+	
+
+
+
+The Export Job is deployed on both application servers, but a lock in the database ensures that only one instance runs each scheduled export.
+
+
+5.4. Step 4: Define the network zones and links
+
+
+The system spans five network zones: the Internet, the TMC data centre, the corporate network, the WAN, and the LAN of each factory. A firewall controls every boundary, and the application and database servers are not reachable directly from the Internet.
+
+
+
+
+From
+	To
+	Protocol
+	Network
+	Purpose
+	Smartphone, Workstation
+	Load Balancer
+	HTTPS
+	Internet
+	User requests
+	Load Balancer
+	App Server
+	HTTP
+	Data centre
+	Forwarded requests
+	App Server
+	DB Primary
+	SQL over TLS
+	Data centre
+	Data access
+	DB Primary
+	DB Standby
+	Synchronous replication
+	Data centre
+	Second copy of every committed transaction
+	DB Standby
+	Backup Storage
+	Backup
+	Data centre
+	Recovery from data corruption
+	App Server
+	HR/Payroll Server
+	HTTPS
+	Corporate network
+	Monthly export (FR-RA-04)
+	App Server
+	Mail Server
+	SMTP over TLS
+	Corporate network
+	Portal links and notifications
+	Gate Kiosk
+	Load Balancer
+	HTTPS with mutual TLS
+	IPsec VPN over WAN
+	Upload of events and gate status; download of reference data
+	Gate Kiosk
+	NTP Server
+	NTP
+	IPsec VPN over WAN
+	Clock synchronisation
+	Gate Kiosk
+	Turnstile Controller
+	HTTPS (Turnstile API)
+	Factory LAN
+	Unlock request (FR-AT-02)
+	Gate Kiosk
+	QR Scanner
+	USB
+	Local
+	Scanned QR code
+	Turnstile Controller
+	Turnstile
+	Vendor I/O
+	Local
+	Gate control
+	
+
+
+
+Each gate kiosk holds its own client certificate, so the central system authenticates every gate before accepting its events.
+
+
+5.5. Physical architecture
+
+
+Figure 5.1 shows the physical architecture.
+
+
+  
+
+
+
+Figure 5.1: TMC physical architecture
+https://drive.google.com/file/d/1hd5VJtiP1vsahOdfMdsfa3VvYTs7-6q4/view?usp=sharing
+
+
+5.6. Verification against the architecture characteristics
+
+
+
+
+Characteristic
+	How the physical architecture satisfies it
+	Performance (NFR-01)
+	The scan-to-unlock path stays inside the factory: scanner, kiosk and Turnstile Controller over the LAN, with no WAN hop. Design budget: scan 0.3 s, validation 0.1 s, local write 0.1 s, Turnstile API 1.0 s, leaving a margin of 0.5 s.
+	Availability (NFR-06)
+	Gates operate without the central site. The load balancers, application servers and databases are each duplicated, so no single central node stops the service.
+	Reliability (NFR-02)
+	An event is written to kiosk storage before the unlock (AD-06). Each central transaction is committed on two database servers and is also included in the backups.
+	Recoverability (NFR-07)
+	The Sync Client retries until the upload succeeds; Event Intake accepts each event only once (AD-07).
+	Security, Privacy (NFR-03, NFR-04)
+	Firewalled zones, a VPN between sites, TLS on every link, a certificate per gate, and encryption of the database, the backups and the kiosk storage.
+	Interoperability (NFR-05)
+	The export runs from the application servers to the HR/Payroll Server and does not depend on the gates.
+	Scalability (NFR-08)
+	A new factory adds a firewall, a switch and kiosks, plus configuration. Central capacity grows by adding an application server behind the load balancer.
+	
+
+
+
+The table below shows how the system behaves when a node or link fails.
+
+
+
+
+Failure
+	Effect
+	Handling
+	WAN or VPN link
+	Gates cannot synchronise
+	Gates keep admitting employees; events are kept locally and synchronised when the link returns
+	One App Server
+	None for users
+	The load balancer routes all requests to the other server
+	DB Primary
+	Central writes pause briefly
+	The standby is promoted; the Sync Client retries pending uploads
+	One Gate Kiosk
+	One gate unavailable
+	Gate Monitoring notifies security guards; employees use other gates or a manual entry is recorded (FR-AT-05)
+	Turnstile Controller
+	Gates cannot open
+	Security guards open the gates and record manual entries
+	HR/Payroll Server
+	Export delayed
+	The Export Job retries and notifies HR staff (FR-RA-05)
+	
+
+
+
+
+
+6. Architecture Decisions and Design Principles
+TMC is built as a Modular Monolith for the central system, with gate stations that operate locally at each factory. This section defines the architecture decisions, which are the rules that constrain how TMC is constructed, and the design principles, which are the guidelines the team follows where no rule prescribes a specific solution. Each decision states its rationale and its trade-off.
+6.1. Architecture Decisions
+ID
+	Decision (rule)
+	Rationale
+	Trade-off
+	AD-01
+	The central system is one deployable application divided into domain modules that follow the functional areas of Section 1.4: Employee and QR Code, Gate Station Management , Attendance, Reporting and Audit, Administration, and HR Integration.
+	Selection in Section 3.8 ; the peak load does not require independent scaling; NFR-01, NFR-02, NFR-09
+	Any change redeploys the whole application; scaling means replicating the whole application
+	AD-02
+	A module must use another module only through its public interface or through published domain events. Access to another module's internal classes is not allowed.
+	NFR-09, CO-3
+	More interface and mapping code than direct calls
+	AD-03
+	All modules share one database, but each table is owned by exactly one module. Other modules must read that data through the owner's interface; cross-module joins are not allowed.
+	NFR-02 (single ACID transaction), NFR-09
+	Reports that combine data from several modules need query interfaces instead of one SQL join
+	AD-04
+	Each gate station runs as a separate component at the factory. It must validate QR codes and store access events locally, and unlocking a gate must not depend on a response from the central system.
+	NFR-06, FR-AT-06, AS-4
+	Employee status changes and revocations reach the gates with a delay; gate software is more complex; the Turnstile Control System must be reachable from the gate stations over the factory network 
+	AD-05
+	QR codes must be digitally signed so that a gate station can verify them without contacting the central system. A code must contain no personal data other than an identifier. and carry an expiry time
+	FR-AT-01, FR-UQ-05, NFR-04, NFR-06
+	Verification keys must be distributed to gate stations and rotated; gate station clocks must be kept synchronised to check expiry  
+	AD-06
+	An access event must be written to persistent local storage before the unlock request is sent; its result is updated afterwards.
+	NFR-02, FR-AT-03, FR-AT-04
+	One local write is added to the 2-second budget of NFR-01
+	AD-07
+	Every access event receives a unique identifier at the gate station, and the Attendance module must accept the same event only once.
+	NFR-07, NFR-02
+	A duplicate check is needed on every synchronisation
+	AD-08
+	External systems are reached only through adapters: Turnstile Adapter in the gate station software, and the HR/Payroll Adapter in the HR Integration module. All other code must depend on interfaces defined by TMC.
+	CO-1, FR-SA-03, NFR-09
+	Extra abstraction and mapping code
+	AD-09
+	The monthly transmission must run as a scheduled background job with automatic retry inside the HR Integration module, never within a gate request. Undelivered data must raise a notification to HR staff.
+	NFR-05, FR-RA-04, FR-RA-05
+	Delivery status is known only after the job runs, so it must be monitored
+	AD-10
+	Every request to the central system must pass authentication and role-based authorisation at a single entry point before it reaches any module. Modules must not implement their own login or role checks.
+	NFR-03, FR-SA-01, FR-RA-03
+	The entry point becomes a critical component; each new function needs a permission mapping
+	AD-11
+	Personal data must be encrypted in transit and at rest, including data held at gate stations. Modules other than Employee and QR Code must refer to employees by employee ID only.
+	NFR-04
+	Encryption and key management overhead; reports need an extra lookup for names
+	AD-12
+	Audit records must only be appended. No role, including System Administrator, may modify or delete them.
+	NFR-03, FR-RA-06
+	Storage grows continuously; corrections are recorded as new entries
+	AD-13
+	Operational parameters, such as QR code validity, export schedule and API connection settings, must be stored as configuration and must not be hard-coded.
+	FR-SA-02, FR-SA-03, NFR-09
+	Configuration values must be validated, and changes must be audited
+	6.2. Design Principles
+Principle
+	Guideline for TMC
+	Single Responsibility
+	Each module and class should have one reason to change. QR validation, turnstile communication and attendance recording are separate components, so a change in the Turnstile API does not touch attendance logic.
+	Open/Closed
+	New behaviour should be added by new code, not by editing existing code. A new access rule is a new class implementing the common validation interface; a new business capability is a new module.
+	Liskov Substitution
+	Any implementation of an interface should be usable wherever the interface is expected. A simulated turnstile adapter used for testing must behave like the real adapter from the caller's point of view.
+	Interface Segregation
+	Module interfaces should be small and specific to their client. The Reporting and Audit module uses a read-only attendance interface, and the gate station depends only on an unlock interface.
+	Dependency Inversion
+	Business logic should depend on abstractions that it defines, such as a turnstile gateway or a payroll exporter; the adapters implement these abstractions. Source code dependencies point inward, toward the business rules.
+	Separation of concerns
+	Business rules should remain independent of the user interface, the database and the external systems, so that each can change without affecting the others.
+	High cohesion, low coupling
+	Functions that change together should be placed in the same module, and modules should communicate through narrow interfaces instead of shared tables.
+	Prefer asynchronous work outside the gate path
+	Reports, exports, notifications and synchronisation should run in the background, so that only validation and unlocking sit on the 2-second path.
+	Prefer configuration to code change
+	Where a value may differ between factories or over time, it should be configurable.
+	Design modules for later extraction
+	A module should not rely on running in the same process as the others, so that it can become a separate service if new factories or requirements demand it (NFR-08).
+	
+
+M2 – Issues and Solutions
+M2 raises two issues with the TMC system: connection loss during attendance transaction processing, and exposure of static QR codes.
+1. Issue 1: Connection loss mid-transaction
+Issue 1 concerns the attendance transaction itself, from the moment an employee presents a QR code until the event is safely stored in the central system. We analyse the four links on that path in two groups: the first three happen at the gate during the scan, within the 2-second budget; the fourth is the recording of the event in the central system. M1 handled only a full WAN outage, so M2 must also cover breaks in the middle of a transaction.
+Link
+	What happens if it breaks mid-transaction
+	Proposed handling
+	Phone ↔ server
+	QR Display runs on the server, so an employee whose phone has no signal at the gate has no code. This is the largest gap.
+	Generate the QR on the phone (see Section 2).
+	Kiosk ↔ Turnstile (LAN)
+	The unlock request is sent but times out; it is unknown whether the gate opened.
+	Record the event as UNLOCK_UNKNOWN. Retry with an idempotency key or query the turnstile status. Notify the security guard.
+	Kiosk power loss or crash
+	An event is half written.
+	SQLite WAL with fsync (AD-06 already requires a local write first). On restart, reconcile pending events.
+	Kiosk ↔ data centre (during sync)
+	Only part of a batch is uploaded.
+	Outbox pattern with a per-event acknowledgement. Mark an event as synced only after the central commit. Extends AD-07.
+	Extended offline operation. When the kiosk ↔ data centre link stays down for a long time, the gate keeps admitting employees but needs explicit rules:
+* Clock drift: the NTP server sits in the data centre behind the VPN, so a WAN outage also removes the kiosk's time source and QR expiry checks become unreliable. Add a backup time source at each factory and allow a small tolerance.
+* Stale revocations and keys: a gate only knows data up to its last sync. State this as an accepted trade-off.
+* Maximum offline duration (configurable) and Local Store capacity, with an alert when a threshold is reached.
+* Gate Monitoring alerts guards and administrators when a gate has been offline longer than a set period.
+Turnstile failure (fail-secure). The Turnstile Control System is an existing external system: TMC only calls its API and never modifies it (CO-1). If the turnstile does not respond, TMC does not open the gate by itself; it records the event as UNLOCK_UNKNOWN and alerts the security guard. The guard lets employees through manually and records a manual entry with a mandatory reason (FR-AT-05), so no attendance record is lost. We call this behaviour fail-secure and state it explicitly; M1 (Table 5.6) already implies it. Emergency evacuation is handled by the turnstile hardware and the fire alarm system, outside the software scope.
+2. Issue 2: Exposed QR codes
+The main approach is a device-bound QR code: it is signed on the phone, valid for 15–30 seconds, and accepted only once. This blocks copying and replay, and it also removes the phone's dependency on the network from Issue 1.
+How the device-bound QR works:
+1. When an employee first signs in to the app, the phone generates a key pair. The private key stays in the phone's secure storage and never leaves the device.
+2. The server issues a device certificate containing the employee ID, the device public key and an expiry (for example 7 days), signed by the server.
+3. Every 15–30 seconds, the app signs (certificate + timestamp + nonce) to produce a new QR code. No network is needed.
+4. The gate verifies the server signature on the certificate, then the device signature, the timestamp, the revocation list and the nonce. No network is needed either.
+Both the phone and the gate therefore work offline, and a screenshot sent to another phone is useless once it is used or expires.
+Limit to state clearly: if an employee hands their whole phone to someone else, the device-bound QR cannot detect it, because the code comes from the genuine device. Face capture at the kiosk could address this as a future extension, but it conflicts with the privacy requirement, so it stays out of scope.
+
+
+1. Module view
+tmc-central
+* API Entry Point: Authentication, Authorization
+* Employee & QR Code: Employee Records, Device Enrollment (M2, thay QR Display), QR Issuing (M2)
+* Gate Station Management: Gate Registry, Gate Monitoring (M2)
+* Attendance: Event Intake (M2), Manual Entry, Attendance Query
+* Reporting & Audit: Attendance Views, Reports & Dashboards, Audit Log
+* HR Integration: Export Job, HR/Payroll Adapter
+* Administration: User & Role Management, System Configuration
+Gate Station Software: QR Validator (M2), Local Store (M2), Turnstile Adapter (M2), Sync Client (M2)
+Mobile App: QR Generator (M2), Key Store (M2), Attendance Viewer
+Web Portal: Management UI
+Interface đề xuất: TurnstileGateway, PayrollExporter, AttendanceQuery, EventIntake, AuditPublisher, ConfigReader
+2. Component-and-connector view
+* Phía người dùng: Mobile App, Web Portal
+* Tại cổng: QR Scanner, Gate Software, Local Store (SQLite)
+* Trung tâm: Load Balancer, tmc-central (×2), PostgreSQL Primary, PostgreSQL Standby
+* Hệ thống ngoài: Turnstile Control System, HR/Payroll System, Mail Server
+3. Allocation view
+* Data centre: Firewall / VPN gateway, Load Balancer (×2), App Server (×2), DB Primary, DB Standby, Backup Storage, NTP Server
+* Mỗi nhà máy: Firewall / VPN gateway, LAN Switch, Local Time Source (M2), Gate Kiosk (×N), QR Scanner (×N), Turnstile Controller + Turnstile (có sẵn)
+* Corporate network: HR/Payroll Server, Mail Server (có sẵn)
+* Phía người dùng: Smartphone, Workstation
+
+
+Module view
+The module view shows how the code of TMC is divided and which part depends on which. We use it to plan the code and to see what a change will affect. Runtime behaviour belongs to the component-and-connector view, and the place where the software runs belongs to the allocation view. A component inside a module is called a submodule here, because this view is about units of code.
+Figure 1 is a UML package diagram of the whole system.   
+Figure 1: Package diagram of TMC
+The system has four subsystems. Mobile App and Web Portal are the clients, Gate Station Software runs at each gate, and tmc-central holds the API Entry Point, the six domain modules and Shared Contracts. The modules follow Section 4 with one change for M2. The QR code is now created on the phone, so Device Enrollment replaces QR Display, and Mobile App has QR Generator and Key Store.
+Shared Contracts is the only new package. Every module writes to Audit Log and reads from System Configuration, and Reporting & Audit also reads from Attendance. Direct calls would make these modules depend on each other in a circle. To avoid this, AuditPublisher and ConfigReader are placed in Shared Contracts, and Audit Log and System Configuration implement them. This package holds only interfaces, so it does not appear in the component-and-connector view.
+Three rules apply to this view. A module hides its submodules behind its public interface, which is encapsulation (AD-02). Clients and gates reach the domain modules only through the API Entry Point (AD-10). Dependencies between modules only point downward in Figure 1. The table below lists each module, its responsibility and its public interface.
+Module
+	Responsibility
+	Public interface
+	Web Portal
+	Management user interface for all roles
+	None
+	Mobile App
+	Generates signed QR codes offline, keeps the private key and shows personal attendance
+	None
+	Gate Station Software
+	Validates QR codes, stores events, unlocks the gate and synchronises with tmc-central
+	None; TurnstileGateway is internal
+	API Entry Point
+	Authenticates users, checks roles and routes each request to the right module
+	REST API for clients and gates
+	Reporting & Audit
+	Shows attendance, reports and dashboards; keeps the audit log
+	Report queries; implements AuditPublisher
+	HR Integration
+	Sends monthly data to the HR/Payroll System, retries and tracks the status
+	Export status and re-transmission; PayrollExporter is internal
+	Attendance
+	Keeps attendance transactions from the gates and from manual entries
+	EventIntake, AttendanceQuery, manual entry
+	Employee & QR Code
+	Keeps employee records, registers phones and issues and revokes device certificates
+	Employee query, device enrollment
+	Gate Station Management
+	Registers gates and tracks their status
+	Gate query, gate status update
+	Administration
+	Manages users, roles and system settings
+	User and role management; implements ConfigReader
+	Shared Contracts
+	Holds the interfaces that all domain modules share
+	AuditPublisher, ConfigReader
+	
+
+The dependency structure matrix below lists every dependency. A 1 means that the module in the column uses the module in the row.
+Used module
+	WP
+	MA
+	GS
+	API
+	RA
+	HR
+	AT
+	EQ
+	GM
+	AD
+	SC
+	Web Portal (WP)
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	Mobile App (MA)
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	Gate Station Software (GS)
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	API Entry Point (API)
+	1
+	1
+	1
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	Reporting & Audit (RA)
+	
+
+	
+
+	
+
+	1
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	HR Integration (HR)
+	
+
+	
+
+	
+
+	1
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	Attendance (AT)
+	
+
+	
+
+	
+
+	1
+	1
+	1
+	
+
+	
+
+	
+
+	
+
+	
+
+	Employee & QR Code (EQ)
+	
+
+	
+
+	
+
+	1
+	1
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	Gate Station Management (GM)
+	
+
+	
+
+	
+
+	1
+	1
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	Administration (AD)
+	
+
+	
+
+	
+
+	1
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	Shared Contracts (SC)
+	
+
+	
+
+	
+
+	
+
+	1
+	1
+	1
+	1
+	1
+	1
+	
+
+	
+
+Every 1 is below the diagonal, so there is no circular dependency. Each module can be built and tested with only the modules below it. Shared Contracts and Attendance are used the most, and their interfaces should change as little as possible. External systems are not in the matrix because each one is reached through one adapter.
+Figure 2 shows the six interfaces of TMC. The top row calls each interface, and the submodule in the bottom row implements it (an is a relation). So the top row does not depend on the bottom row. Sync Client calls EventIntake and ConfigReader through the API Entry Point.
+  
+
+Figure 2: Interfaces of TMC
+A change in the Turnstile API touches only Turnstile Adapter, and a simulated adapter can replace the real one in tests. A new HR system needs only a new adapter. A new gate or factory needs only configuration and more copies of Gate Station Software. These examples follow the SOLID guidelines of Section 6.2.
+TMC has one shared database, and each table belongs to one module. Figure 3 shows the main tables in crow's foot notation, each inside the module that owns it.
+  
+
+Figure 3: Data model of the shared database
+Other modules read a table through the owner's interface, and a line between two modules is only a reference by ID. Personal data such as the employee's name therefore stays in Employee.
+This view is derived from the logical architecture, the physical architecture, and the solutions adopted for the two issues raised (connection loss during transaction processing and exposure of static QR codes).
+The view emphasises the clear separation between the gate stations and the tmc-central. This separation is essential for meeting NFR-01 (response time ≤ 2 seconds), NFR-06 (offline operation), and NFR-02 / NFR-07 (no loss of attendance records).
+1. Runtime Components
+1.1. Client-side Components
+Component
+	Responsibility
+	Notes
+	Mobile App
+	Generates device-bound dynamic QR codes, stores the private key securely (Key Store), displays personal attendance history
+	Runs on employee smartphones
+	Web Portal
+	Management user interface for all roles (HR staff, supervisors, security guards, administrators, executive management)
+	Browser-based
+	1.2. Gate Station Components (Edge)
+Each gate runs an independent instance of the Gate Station Software, which consists of the following parts:
+Component
+	Responsibility
+	Notes
+	QR Scanner
+	Captures the QR code image or data and forwards it to Gate Software
+	Hardware
+	Gate Software
+	Orchestrates local validation, event recording and turnstile command
+	Contains the four sub-components below
+	QR Validator
+	Verifies the device certificate, device signature, timestamp, nonce and revocation list using data held in the Local Store
+	Offline-capable (M2)
+	Local Store (SQLite)
+	Durable buffer for access events and reference data (employee status, keys, revocations, gate configuration). Content is encrypted.
+	Supports offline operation (AD-06, FR-AT-06)
+	Turnstile Adapter
+	Translates the unlock decision into a call to the existing Turnstile Control System API
+	Implements AD-08
+	Sync Client
+	Uploads pending events and gate status; downloads reference data and configuration
+	Implements NFR-07 and AD-07
+	1.3. Central Components (Data Centre)
+Component
+	Responsibility
+	Notes
+	Load Balancer
+	Terminates TLS, distributes requests, serves the Web Portal
+	Active-passive
+	tmc-central (×2)
+	Modular Monolith containing all domain modules
+	Active-active, stateless
+	PostgreSQL Primary
+	Authoritative transactional store
+	 
+	PostgreSQL Standby
+	Hot standby with synchronous replication
+	Failover
+	Inside tmc-central the main runtime components (matching the Module view) are:
+• API Entry Point – Authentication and role-based authorisation (AD-10)
+• Employee & QR Code – Employee Records, Device Enrollment, QR Issuing
+• Gate Station Management – Gate Registry, Gate Monitoring
+• Attendance – Event Intake, Manual Entry, Attendance Query
+• Reporting & Audit – Attendance Views, Reports & Dashboards, Audit Log
+• HR Integration – Export Job, HR/Payroll Adapter
+• Administration – User & Role Management, System Configuration
+1.4. External Systems
+Component
+	Responsibility
+	Turnstile Control System
+	Physical gate open/close (existing system at each factory)
+	HR/Payroll System
+	Receives the monthly attendance export for reconciliation and payroll processing
+	Mail Server
+	Notification delivery and portal links
+	2. Key Connectors and Interactions
+2.1. Primary Access Flow (Online or Offline)
+1. The employee opens the Mobile App and generates a short-lived device-bound QR code (device certificate + timestamp + nonce, signed with the phone’s private key). No network connection is required. This is the M2 solution for static QR exposure and phone-side connectivity loss.
+2. The employee presents the QR code to the QR Scanner.
+3. The QR Scanner forwards the data to the QR Validator (local processing).
+4. The QR Validator verifies the code using reference data held in the Local Store (signature, expiry, revocation list, factory authorisation).
+5. The QR Validator writes the access event to the Local Store before any unlock attempt is made (AD-06).
+6. If the code is valid, the Turnstile Adapter sends an unlock request to the Turnstile Control System over the factory LAN.
+7. The result is written back into the local event record.
+8. Later, the Sync Client uploads the event to Event Intake (via the API Entry Point) using the EventIntake interface. Event Intake performs an idempotent insert (AD-07).
+Critical property: Steps 1–7 never require a connection to the central system. This directly solves Issue 1 (connection loss during transaction processing) and satisfies NFR-01 and NFR-06.
+2.2. Synchronisation Connector
+Sync Client - API Entry Point (HTTPS with mutual TLS over the site-to-site VPN)
+• Upload: pending access events and gate status
+• Download: reference data (employee status, verification keys, revocations, gate configuration)
+The connector uses the EventIntake, ConfigReader and gate-status endpoints. An outbox pattern together with per-event acknowledgement guarantees that no event is lost and that no event is stored twice.
+2.3. Other Important Connectors
+Interface / Connector
+	From → To
+	Purpose
+	TurnstileGateway
+	Turnstile Adapter → Turnstile Control System
+	Unlock command
+	EventIntake
+	Sync Client → Event Intake
+	Upload of access events
+	AttendanceQuery
+	Reporting & Audit / Export Job → Attendance
+	Read-only attendance data
+	PayrollExporter
+	Export Job → HR/Payroll Adapter → HR/Payroll System
+	Monthly attendance export
+	AuditPublisher
+	All modules → Audit Log
+	Asynchronous audit events
+	ConfigReader
+	Gate Software / modules → System Configuration
+	Operational parameters
+	3. How the C&C View Addresses the M2 Issues
+Issue
+	Solution in the C&C Structure
+	Connection loss during attendance transaction processing
+	The entire critical path (validation, local write and unlock) resides inside the Gate Software and Local Store. Synchronisation is asynchronous and lies outside the two-second path.
+	Exposure of static QR codes
+	The Mobile App generates device-bound, short-lived, signed QR codes. The gate verifies them offline using the Local Store. A captured image cannot be reused after expiry or first use.
+	4. Quality Attributes Realised by the C&C Structure
+Quality Attribute
+	Mechanism in the C&C View
+	Performance (NFR-01)
+	The scan-to-unlock path stays entirely inside the factory; no WAN hop is required
+	Reliability / No data loss (NFR-02)
+	Local write before unlock together with idempotent central intake
+	Availability (NFR-06)
+	Gates operate independently of the central system
+	Recoverability (NFR-07)
+	Sync Client, outbox pattern and unique event identifiers
+	Security and Privacy
+	Mutual TLS, device certificates, encrypted Local Store, RBAC at the API Entry Point, comprehensive audit trail
+	Maintainability
+	Well-defined interfaces (TurnstileGateway, EventIntake, etc.) isolate external systems and modules
+	
+________________
+5. Runtime Deployment Topology
+  
+
+8. Allocation view
+The Allocation View illustrates how the TMC system's software components are deployed onto physical infrastructure across the Data Centre, Factory Sites and Corporate Network. It identifies the hardware nodes, deployed artifacts, execution environments and communication paths between them.
+  
+
+Figure 8.1: TMC Allocation view
