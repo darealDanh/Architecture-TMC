@@ -4,7 +4,9 @@ package com.tmc.mobile.ui.attendance
 
 import com.tmc.mobile.MainDispatcherRule
 import com.tmc.mobile.data.attendance.OfflineFirstAttendanceRepository
+import com.tmc.mobile.domain.attendance.AttendanceLoad
 import com.tmc.mobile.domain.attendance.AttendanceRecord
+import com.tmc.mobile.domain.attendance.AttendanceRepository
 import com.tmc.mobile.domain.attendance.AttendanceSummarizer
 import com.tmc.mobile.domain.attendance.EntrySource
 import com.tmc.mobile.domain.attendance.GetMonthlyAttendance
@@ -15,6 +17,7 @@ import com.tmc.mobile.domain.fakes.InMemorySessionStore
 import com.tmc.mobile.domain.fakes.MutableClock
 import com.tmc.mobile.domain.fakes.MutableNetworkStatus
 import com.tmc.mobile.domain.fakes.StubServer
+import com.tmc.mobile.domain.model.Session
 import com.tmc.mobile.domain.session.SignInAndEnroll
 import java.time.Instant
 import java.time.LocalDate
@@ -51,7 +54,7 @@ class AttendanceViewModelTest {
     private suspend fun TestScope.started(): AttendanceViewModel {
         SignInAndEnroll(server, server, InMemoryDeviceKeyStore(), sessions, InMemoryCertificateStore())("E001", "password")
         val repository = OfflineFirstAttendanceRepository(server, InMemoryAttendanceCache(), network)
-        val viewModel = AttendanceViewModel(GetMonthlyAttendance(sessions, repository, AttendanceSummarizer.standard()), clock)
+        val viewModel = AttendanceViewModel(GetMonthlyAttendance(sessions, repository, AttendanceSummarizer.standard()), clock, network)
         advanceUntilIdle()
         return viewModel
     }
@@ -89,5 +92,31 @@ class AttendanceViewModelTest {
         network.goOffline()
 
         assertEquals(AttendanceContent.NoData, started().state.value.content)
+    }
+
+    @Test
+    fun reloadsWhenTheNetworkReturns() = runTest {
+        network.goOffline()
+        val viewModel = started()
+
+        network.goOnline()
+        advanceUntilIdle()
+
+        val loaded = assertIs<AttendanceContent.Loaded>(viewModel.state.value.content)
+        assertEquals(false, loaded.attendance.fromCache)
+    }
+
+    @Test
+    fun unexpectedFailureShowsAnError() = runTest {
+        SignInAndEnroll(server, server, InMemoryDeviceKeyStore(), sessions, InMemoryCertificateStore())("E001", "password")
+        val failing = object : AttendanceRepository {
+            override suspend fun load(session: Session, month: YearMonth): AttendanceLoad =
+                throw IllegalStateException("database closed")
+        }
+
+        val viewModel = AttendanceViewModel(GetMonthlyAttendance(sessions, failing, AttendanceSummarizer.standard()), clock, network)
+        advanceUntilIdle()
+
+        assertEquals(AttendanceContent.Error("Something went wrong. Try again."), viewModel.state.value.content)
     }
 }

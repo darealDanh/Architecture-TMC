@@ -60,6 +60,17 @@ class ObservePassStateTest {
     }
 
     @Test
+    fun missingDeviceKeyIsReportedInsteadOfThrown() = runTest {
+        enroll()
+        keyStore.delete()
+
+        observe().test {
+            assertEquals(PassState.DeviceKeyMissing, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun noCertificateIsNotEnrolled() = runTest {
         observe().test {
             assertEquals(PassState.NotEnrolled, awaitItem())

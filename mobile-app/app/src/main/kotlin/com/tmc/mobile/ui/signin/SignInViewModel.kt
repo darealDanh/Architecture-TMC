@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.tmc.mobile.domain.port.InvalidCredentialsException
 import com.tmc.mobile.domain.port.ServerUnreachableException
 import com.tmc.mobile.domain.session.SignInAndEnroll
+import com.tmc.mobile.ui.UserMessages
+import com.tmc.mobile.ui.rethrowIfCancelled
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,7 +56,10 @@ class SignInViewModel @Inject constructor(
             } catch (e: InvalidCredentialsException) {
                 WRONG_CREDENTIALS
             } catch (e: ServerUnreachableException) {
-                UNREACHABLE
+                UserMessages.UNREACHABLE
+            } catch (e: Exception) {
+                e.rethrowIfCancelled()
+                UserMessages.UNEXPECTED
             }
             mutableState.update { it.copy(loading = false, error = error, signedIn = error == null) }
         }
@@ -63,6 +68,5 @@ class SignInViewModel @Inject constructor(
     private companion object {
         const val EMPTY_FIELDS = "Enter your employee ID and password"
         const val WRONG_CREDENTIALS = "Wrong employee ID or password"
-        const val UNREACHABLE = "Can't reach the server"
     }
 }

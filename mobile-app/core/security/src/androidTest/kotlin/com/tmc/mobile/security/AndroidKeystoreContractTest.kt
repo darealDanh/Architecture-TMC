@@ -31,4 +31,7 @@ class AndroidKeystoreContractTest {
 
     @Test
     fun deleteRemovesKey() = contract.deleteRemovesKey()
+
+    @Test
+    fun signingWithoutKeyFailsAsMissingKey() = contract.signingWithoutKeyFailsAsMissingKey()
 }

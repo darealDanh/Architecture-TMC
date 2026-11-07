@@ -1,9 +1,11 @@
 package com.tmc.mobile.domain.fakes
 
 import com.tmc.mobile.domain.pass.EcdsaP256
+import com.tmc.mobile.domain.port.DeviceKeyMissingException
 import com.tmc.mobile.domain.port.DeviceKeyStore
 import com.tmc.mobile.domain.port.PayloadSigner
 import kotlin.test.assertContentEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -42,12 +44,19 @@ class DeviceKeyStoreContract(private val store: DeviceKeyStore, private val sign
         assertNull(store.publicKey())
     }
 
+    fun signingWithoutKeyFailsAsMissingKey() {
+        store.delete()
+
+        assertFailsWith<DeviceKeyMissingException> { signer.sign("pass content".toByteArray()) }
+    }
+
     fun runAll(reset: () -> Unit) {
         listOf(
             ::createdKeyHasPublicKey,
             ::signaturesVerifyWithPublicKey,
             ::createKeyWhenOneExistsKeepsTheSameKey,
             ::deleteRemovesKey,
+            ::signingWithoutKeyFailsAsMissingKey,
         ).forEach { check ->
             reset()
             check()

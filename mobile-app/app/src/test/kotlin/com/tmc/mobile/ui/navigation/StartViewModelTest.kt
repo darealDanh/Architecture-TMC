@@ -25,20 +25,37 @@ class StartViewModelTest {
     private val sessions = InMemorySessionStore()
     private val certificates = InMemoryCertificateStore()
 
-    @Test
-    fun startsAtMainWhenSessionAndCertificateExist() = runTest {
-        val server = StubServer(MutableClock(Instant.parse("2026-11-07T07:00:00Z")))
-        SignInAndEnroll(server, server, InMemoryDeviceKeyStore(), sessions, certificates)("E001", "password")
+    private val keyStore = InMemoryDeviceKeyStore()
 
-        val viewModel = StartViewModel(sessions, certificates)
+    private suspend fun signIn() {
+        val server = StubServer(MutableClock(Instant.parse("2026-11-07T07:00:00Z")))
+        SignInAndEnroll(server, server, keyStore, sessions, certificates)("E001", "password")
+    }
+
+    @Test
+    fun startsAtMainWhenSessionCertificateAndKeyExist() = runTest {
+        signIn()
+
+        val viewModel = StartViewModel(sessions, certificates, keyStore)
         advanceUntilIdle()
 
         assertEquals(StartDestination.Main, viewModel.start.value)
     }
 
     @Test
+    fun startsAtSignInWhenTheDeviceKeyIsGone() = runTest {
+        signIn()
+        keyStore.delete()
+
+        val viewModel = StartViewModel(sessions, certificates, keyStore)
+        advanceUntilIdle()
+
+        assertEquals(StartDestination.SignIn, viewModel.start.value)
+    }
+
+    @Test
     fun startsAtSignInOtherwise() = runTest {
-        val viewModel = StartViewModel(sessions, certificates)
+        val viewModel = StartViewModel(sessions, certificates, keyStore)
         advanceUntilIdle()
 
         assertEquals(StartDestination.SignIn, viewModel.start.value)

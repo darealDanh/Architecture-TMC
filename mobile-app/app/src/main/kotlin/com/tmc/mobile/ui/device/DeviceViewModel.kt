@@ -8,6 +8,8 @@ import com.tmc.mobile.domain.device.RenewCertificate
 import com.tmc.mobile.domain.port.ServerUnreachableException
 import com.tmc.mobile.domain.port.SessionExpiredException
 import com.tmc.mobile.domain.session.SignOut
+import com.tmc.mobile.ui.UserMessages
+import com.tmc.mobile.ui.rethrowIfCancelled
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,9 +49,12 @@ class DeviceViewModel @Inject constructor(
                 renewCertificate()
                 RENEWED
             } catch (e: ServerUnreachableException) {
-                UNREACHABLE
+                UserMessages.UNREACHABLE
             } catch (e: SessionExpiredException) {
-                SESSION_EXPIRED
+                UserMessages.SESSION_EXPIRED
+            } catch (e: Exception) {
+                e.rethrowIfCancelled()
+                UserMessages.UNEXPECTED
             }
             refreshStatus()
             mutableState.update { it.copy(renewing = false, message = message) }
@@ -58,8 +63,13 @@ class DeviceViewModel @Inject constructor(
 
     fun signOut() {
         viewModelScope.launch {
-            signOutUseCase()
-            mutableState.update { it.copy(signedOut = true) }
+            try {
+                signOutUseCase()
+                mutableState.update { it.copy(signedOut = true) }
+            } catch (e: Exception) {
+                e.rethrowIfCancelled()
+                mutableState.update { it.copy(message = UserMessages.UNEXPECTED) }
+            }
         }
     }
 
@@ -68,13 +78,16 @@ class DeviceViewModel @Inject constructor(
     }
 
     private suspend fun refreshStatus() {
-        val status = getDeviceStatus()
-        mutableState.update { it.copy(status = status) }
+        try {
+            val status = getDeviceStatus()
+            mutableState.update { it.copy(status = status) }
+        } catch (e: Exception) {
+            e.rethrowIfCancelled()
+            mutableState.update { it.copy(message = UserMessages.UNEXPECTED) }
+        }
     }
 
     private companion object {
         const val RENEWED = "Certificate renewed"
-        const val UNREACHABLE = "Can't reach the server"
-        const val SESSION_EXPIRED = "Your session has expired. Sign in again."
     }
 }

@@ -12,6 +12,8 @@ import com.tmc.mobile.domain.fakes.InMemorySessionStore
 import com.tmc.mobile.domain.fakes.MutableClock
 import com.tmc.mobile.domain.fakes.MutableNetworkStatus
 import com.tmc.mobile.domain.fakes.StubServer
+import com.tmc.mobile.domain.model.DeviceCertificate
+import com.tmc.mobile.domain.port.EnrollmentApi
 import com.tmc.mobile.domain.session.SignInAndEnroll
 import com.tmc.mobile.domain.session.SignOut
 import java.time.Duration
@@ -93,6 +95,27 @@ class DeviceViewModelTest {
         viewModel.messageShown()
 
         assertNull(viewModel.state.value.message)
+    }
+
+    @Test
+    fun unexpectedRenewFailureShowsGenericMessage() = runTest {
+        SignInAndEnroll(server, server, keyStore, sessions, certificates)("E001", "password")
+        val failingEnrollment = object : EnrollmentApi {
+            override suspend fun issueCertificate(token: String, devicePublicKey: ByteArray): DeviceCertificate =
+                throw IllegalStateException("unexpected response")
+        }
+        val viewModel = DeviceViewModel(
+            GetDeviceStatus(keyStore, certificates, clock),
+            RenewCertificate(sessions, failingEnrollment, keyStore, certificates),
+            SignOut(keyStore, sessions, certificates, InMemoryAttendanceCache()),
+        )
+        advanceUntilIdle()
+
+        viewModel.renew()
+        advanceUntilIdle()
+
+        assertEquals("Something went wrong. Try again.", viewModel.state.value.message)
+        assertFalse(viewModel.state.value.renewing)
     }
 
     @Test

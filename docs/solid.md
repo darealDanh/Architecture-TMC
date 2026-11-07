@@ -61,7 +61,7 @@ operator fun invoke(certificate: DeviceCertificate): Pass {
 
 The QR format lives in `PassPayloadCodec`. The countdown lives in `ObservePassState`. Drawing the ring lives in `CountdownRing` in the UI. Changing the refresh interval touches one constant. Changing the payload format touches one object.
 
-ViewModels hold screen state and nothing else. `SignInViewModel` turns the outcome of `SignInAndEnroll` into what the screen shows, and the sign-in logic stays in the use case:
+ViewModels hold screen state and turn use case results into what the screen shows. `SignInViewModel` turns the outcome of `SignInAndEnroll` into what the screen shows, and the sign-in logic stays in the use case:
 
 ```kotlin
 val error = try {
@@ -121,14 +121,20 @@ fun signaturesVerifyWithPublicKey() {
 
 Two implementations run it:
 - `InMemoryDeviceKeyStore`, the software key used in unit tests, runs it in `DeviceUseCasesTest.inMemoryKeyStoreMeetsTheContract`.
-- `AndroidKeystoreDeviceKeyStore`, the real hardware-backed store, runs it in the instrumented test `AndroidKeystoreContractTest` on a phone or emulator.
+- `AndroidKeystoreDeviceKeyStore`, the real Android Keystore, runs it in the instrumented test `AndroidKeystoreContractTest` on a phone or emulator. The key is hardware-backed on phones with secure hardware, but not on the emulator.
 
 Both pass. Because they do, every domain test that uses the in-memory store also tells us something true about the real one.
 
 The server works the same way:
 - `FakeTmcServer` (the app's fake) and `StubServer` (a small test double) both implement `AuthApi`, `EnrollmentApi` and `AttendanceApi`.
-- The use cases run against either one unchanged.
-- An HTTP client for the real tmc-central would be a third implementation.
+- `ServerApiContract` holds what any server must do:
+  - accept the right password and reject a wrong one;
+  - fail as unreachable when offline;
+  - issue a certificate that binds the device key and verifies with the server key;
+  - reject a forged token;
+  - return attendance only for the requested month.
+- `StubServerContractTest` and `FakeTmcServerContractTest` run that contract against both servers, so the use case tests that run against `StubServer` hold for the fake the app ships with.
+- An HTTP client for the real tmc-central would be a third implementation, and it would have to pass the same contract.
 
 ## I: Interface Segregation
 
@@ -157,7 +163,7 @@ The device key is split the same way:
 - `DeviceKeyStore` creates, reads and deletes the key.
 - `PayloadSigner` has one method, `sign`.
 
-`GeneratePass` runs every 15 seconds and receives only a `PayloadSigner`, so pass generation cannot delete or replace the device key. Only `SignInAndEnroll`, `RenewCertificate` and `SignOut` get a `DeviceKeyStore`.
+`GeneratePass` runs every 15 seconds and receives only a `PayloadSigner`, so pass generation cannot delete or replace the device key. Only `SignInAndEnroll`, `RenewCertificate`, `SignOut` and `GetDeviceStatus` get a `DeviceKeyStore`.
 
 ## D: Dependency Inversion
 
@@ -172,9 +178,9 @@ The interfaces are owned by the domain (`com.tmc.mobile.domain.port`), and the o
 | `AttendanceRepository` | `OfflineFirstAttendanceRepository` | `:core:data` |
 | `AuthApi`, `EnrollmentApi`, `AttendanceApi` | `FakeTmcServer` | `:fake-server` |
 
-The build enforces this, not just a convention. `:core:domain` is a plain Kotlin module with no Android dependency, so a use case that imports Room, the Keystore or a Compose class does not compile. The domain's 34 unit tests run on a normal JVM, with no emulator and no Android framework.
+The build enforces this, not just a convention. `:core:domain` is a plain Kotlin module with no Android dependency, so a use case that imports Room, the Keystore or a Compose class does not compile. The domain's 36 unit tests run on a normal JVM, with no emulator and no Android framework.
 
-Concrete classes meet only in the Hilt modules in `app/di`. The fake server is named in exactly one file:
+Concrete classes are wired together in the Hilt modules in `app/di`, plus `LocalStorage` in `:core:data`, which builds the Room and DataStore classes privately. The fake server is named in exactly one file:
 
 ```kotlin
 @Provides
@@ -204,9 +210,10 @@ class LocalStorage(context: Context) {
 
 ## Where we bend the rules
 
-- **The gate does not accept the app's codes yet.** The app signs with ECDSA P-256 in a `v2` format, because the Android Keystore supports P-256 on every phone the app targets (Android 8 and later), while Keystore support for the Ed25519 keys our gate module expects arrived only in recent Android versions. The format keeps the same structure and uses standard encodings, so a gate could accept `v2` by adding one validation rule. That rule does not exist yet.
-- **`FakeTmcServer` implements three interfaces.** The real server would too. The split matters on the client side, where each use case receives only the one it needs.
-- **`DeviceKeyStoreContract` is a plain class of check functions, not an abstract test class.** Domain tests use JUnit 6 and Android instrumented tests use JUnit 4, so a shared abstract test class would only work for one of them. Each test class calls the contract's functions itself.
-- **`AndroidKeystoreDeviceKeyStore` and `AndroidKeystorePayloadSigner` must use the same key alias.** They are separate classes for Interface Segregation, but they share a key. Nothing but the shared default value keeps them in step.
-- **Wiring the domain takes more code.** The domain does not depend on Hilt, so its classes carry no `@Inject` annotations. `DomainModule` builds every use case by hand. This is the cost of keeping the domain free of frameworks.
-- **ViewModels catch specific exceptions.** A new failure type from a use case needs a new `catch` in the ViewModel that shows it. A sealed result type would make that impossible to forget, at the cost of more types.
+- The gate does not accept the app's codes yet. The app signs with ECDSA P-256 in a `v2` format, because the Android Keystore supports P-256 on every phone the app targets (Android 8 and later), while Keystore support for the Ed25519 keys our gate module expects arrived only in recent Android versions. The format keeps the same structure and uses standard encodings (X.509 public keys, DER signatures). Even so, accepting `v2` at the gate is not a one-class change. The gate assumes Ed25519 in four places: the codec, which rejects anything but `v1`, the certificate signature rule, the device signature rule, and the stored server key. Each would need a P-256 variant, so the gate is not closed to this change the way the attendance rules are.
+- `FakeTmcServer` implements three interfaces. The real server would too. The split matters on the client side, where each use case receives only the one it needs.
+- `DeviceKeyStoreContract` is a plain class of check functions, not an abstract test class. Domain tests use JUnit 6 and Android instrumented tests use JUnit 4, so a shared abstract test class would only work for one of them. Each test class calls the contract's functions itself.
+- `AndroidKeystoreDeviceKeyStore` and `AndroidKeystorePayloadSigner` must use the same key alias. They are separate classes for Interface Segregation, but they share a key. Nothing but the shared default value keeps them in step.
+- Wiring the domain takes more code. The domain does not depend on Hilt, so its classes carry no `@Inject` annotations. `DomainModule` builds every use case by hand. This is the cost of keeping the domain free of frameworks.
+- `AttendanceViewModel` decides which months to offer (the current month and the two before it). That rule belongs in the domain, but it lives in the ViewModel.
+- ViewModels catch specific exceptions to choose a message. Each ViewModel ends with a catch-all, so an unexpected failure shows "Something went wrong" instead of crashing. Even so, a new failure type that deserves its own message still needs a new `catch`. A sealed result type would make that impossible to forget, at the cost of more types.

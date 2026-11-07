@@ -2,6 +2,7 @@ package com.tmc.mobile.domain.pass
 
 import com.tmc.mobile.domain.model.DeviceCertificate
 import com.tmc.mobile.domain.port.CertificateStore
+import com.tmc.mobile.domain.port.DeviceKeyMissingException
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -24,12 +25,15 @@ class ObservePassState(
             val state = when {
                 certificate == null -> PassState.NotEnrolled
                 !certificate.isValidAt(now) -> PassState.CertificateExpired(certificate.expiresAt)
-                else -> {
+                else -> try {
                     val pass = current
                         ?.takeIf { (shownFor, pass) -> shownFor == certificate && now.isBefore(pass.refreshAt) }
                         ?.second
                         ?: generatePass(certificate).also { current = certificate to it }
                     PassState.Ready(pass, secondsUntil(now, pass.refreshAt), certificate.expiresAt)
+                } catch (e: DeviceKeyMissingException) {
+                    current = null
+                    PassState.DeviceKeyMissing
                 }
             }
             emit(state)

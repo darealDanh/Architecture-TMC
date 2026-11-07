@@ -9,6 +9,7 @@ import com.tmc.mobile.domain.fakes.InMemorySessionStore
 import com.tmc.mobile.domain.fakes.MutableClock
 import com.tmc.mobile.domain.fakes.MutableNetworkStatus
 import com.tmc.mobile.domain.fakes.StubServer
+import com.tmc.mobile.domain.port.DeviceKeyStore
 import com.tmc.mobile.domain.session.SignInAndEnroll
 import java.time.Instant
 import kotlin.test.assertEquals
@@ -91,6 +92,24 @@ class SignInViewModelTest {
         viewModel.onPasswordChange("password")
 
         assertNull(viewModel.state.value.error)
+    }
+
+    @Test
+    fun unexpectedFailureShowsGenericErrorAndStopsLoading() = runTest {
+        val brokenKeyStore = object : DeviceKeyStore by InMemoryDeviceKeyStore() {
+            override fun createKey(): ByteArray = throw IllegalStateException("keystore unavailable")
+        }
+        val viewModel = SignInViewModel(
+            SignInAndEnroll(server, server, brokenKeyStore, sessions, InMemoryCertificateStore()),
+        )
+        viewModel.onEmployeeIdChange("E001")
+        viewModel.onPasswordChange("password")
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals("Something went wrong. Try again.", viewModel.state.value.error)
+        assertFalse(viewModel.state.value.loading)
     }
 
     @Test

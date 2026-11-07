@@ -7,16 +7,23 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -32,11 +39,21 @@ import com.tmc.mobile.ui.theme.TmcColors
 @Composable
 fun PassRoute(viewModel: PassViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    PassScreen(state)
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(state.message) {
+        state.message?.let {
+            snackbar.showSnackbar(it)
+            viewModel.messageShown()
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+        PassScreen(state, onRenew = viewModel::renew)
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
+    }
 }
 
 @Composable
-fun PassScreen(state: PassUiState) {
+fun PassScreen(state: PassUiState, onRenew: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -66,7 +83,7 @@ fun PassScreen(state: PassUiState) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
-                        ExpiredNotice(state.certificateExpired)
+                        PassUnavailable(state, onRenew)
                     }
                 }
             }
@@ -111,23 +128,38 @@ private fun EmployeeHeader(employee: Employee) {
 }
 
 @Composable
-private fun ExpiredNotice(expired: Boolean) {
+private fun PassUnavailable(state: PassUiState, onRenew: () -> Unit) {
+    val (title, body) = when {
+        state.deviceKeyMissing -> "This phone's key is missing" to "Sign out from the Device tab and sign in again."
+        state.certificateExpired -> "Your device certificate has expired" to "Renew it while you are online."
+        else -> "Preparing your pass" to null
+    }
     Column(
         modifier = Modifier.padding(vertical = 40.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(
-            if (expired) "Your device certificate has expired" else "Preparing your pass",
-            style = MaterialTheme.typography.titleSmall,
-        )
-        if (expired) {
+        Text(title, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center)
+        body?.let {
             Text(
-                "Renew it from the Device tab when you are online.",
+                it,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
+        }
+        if (state.certificateExpired) {
+            FilledTonalButton(
+                onClick = onRenew,
+                enabled = !state.renewing,
+                modifier = Modifier.padding(top = 10.dp).height(44.dp),
+            ) {
+                if (state.renewing) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Renew certificate", maxLines = 1)
+                }
+            }
         }
     }
 }

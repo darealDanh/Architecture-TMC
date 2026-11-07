@@ -1,6 +1,7 @@
 package com.tmc.mobile.domain.fakes
 
 import com.tmc.mobile.domain.pass.EcdsaP256
+import com.tmc.mobile.domain.port.DeviceKeyMissingException
 import com.tmc.mobile.domain.port.DeviceKeyStore
 import com.tmc.mobile.domain.port.PayloadSigner
 import java.security.KeyPair
@@ -32,7 +33,7 @@ class InMemoryDeviceKeyStore : DeviceKeyStore, PayloadSigner {
     }
 
     override fun sign(data: ByteArray): ByteArray {
-        val key = checkNotNull(keyPair) { "No device key" }
+        val key = keyPair ?: throw DeviceKeyMissingException()
         return EcdsaP256.sign(key.private, data)
     }
 }
