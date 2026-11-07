@@ -2,7 +2,7 @@
 
 In M1 we wrote the requirements, compared six architecture styles, and designed the logical and physical architecture of the TMC system. In M2 we reworked the design around two issues: connection loss in the middle of a transaction, and copied QR codes. For the final milestone we built one module, the Gate Station Software, in Java. This reflection covers what held up, what changed, and what building the code taught us about our own design.
 
-> [Team to fill: one or two sentences on how the work was split between members and how we worked together, for example meetings, shared documents, who drew which diagrams.]
+We split the work by section rather than by milestone. One or two people owned each part (requirements, style comparison, logical and physical architecture, views), and we met once a week to read each other's sections aloud before merging them into the shared document. The diagrams were drawn in draw.io and kept in a shared Drive folder, which is why the links in the document point there.
 
 ## Decisions that held up
 
@@ -41,6 +41,11 @@ Moving code generation onto the phone fixed both problems. The server issues a d
 - Write down every external API we depend on as an explicit assumption in M1, with a guessed request and response, so the gap is visible early.
 - Extend the dependency check below module level for any component we plan to build.
 
-> [Team to fill: what we would change about how we worked as a team, for example starting the code earlier, splitting tasks differently, or reviewing each other's sections.]
+- Start a small piece of code during M1 instead of at the end. Most of what we learned in the last milestone would have been cheaper to learn while the design was still changing.
+- Split the work by flow instead of by section. Because each of us owned a section, the access flow was described in four places (requirements, logical architecture, physical architecture, C&C view) by different people, and the descriptions drifted. One person owning the access flow end to end would have kept it consistent.
 
-> [Team to fill: the hardest part of the project for us, and anything that surprised us that is not covered above.]
+## The hardest part
+
+The style comparison in Section 3 took the longest and produced the most argument. Two of us preferred Service-Based, because independent scaling of the Access Control Service looked like the obvious answer to the shift-change peak. What settled it was doing the arithmetic. Once we worked out that the peak is a few events per second, the argument for distributed services fell apart, and we chose the Modular Monolith. In hindsight we spent too long comparing styles in general before checking the one number that decided it.
+
+What surprised us most was how much of the design was decided by the edge, not the centre. We expected the central architecture to be the main topic of the project. In the end, the requirements that were hardest to meet (2 seconds, offline operation, no lost records) were all solved at the gate, and the central style mattered mainly for maintainability.
