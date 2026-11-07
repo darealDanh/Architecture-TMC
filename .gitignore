@@ -7,3 +7,9 @@ target/
 .vscode/
 .DS_Store
 .superpowers/
+
+*.txt
+CLAUDE.md
+AGENT.md
+AGENTS.md
+docs/superpowers/

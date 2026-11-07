@@ -1,6 +1,6 @@
 # TMC Gate Station
 
-Software architecture course project for TMC Manufacturing: QR code access control and attendance for two factories. The full design is in `BTL ARCHITECTURE.txt`.
+Software architecture course project for TMC Manufacturing: QR code access control and attendance for two factories. The full design is in the team's architecture report.
 
 This repository implements one module of that design, the Gate Station Software that runs at every gate. It validates device-bound QR codes offline, records each access event before unlocking the turnstile, and synchronises events with the central system without losing or duplicating them.
 
@@ -11,7 +11,6 @@ This repository implements one module of that design, the Gate Station Software 
 | `gate-station/` | Java 17 Maven project |
 | `docs/solid.md` | How the code applies the SOLID principles |
 | `docs/reflection.md` | Team reflection |
-| `docs/superpowers/` | Design and implementation plan |
 | `.github/workflows/ci.yml` | Build and test on every pull request and push to `main` |
 
 ## Build and test
