@@ -32,7 +32,7 @@ public record GateSettings(
                 Duration.ofSeconds(30),
                 Duration.ofSeconds(5),
                 2,
-                Duration.ofSeconds(1),
+                Duration.ofMillis(300),
                 100,
                 Duration.ofHours(4),
                 1000);

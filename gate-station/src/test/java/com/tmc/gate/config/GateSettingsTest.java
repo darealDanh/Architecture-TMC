@@ -15,10 +15,18 @@ class GateSettingsTest {
         assertThat(settings.qrValidityWindow()).isEqualTo(Duration.ofSeconds(30));
         assertThat(settings.clockTolerance()).isEqualTo(Duration.ofSeconds(5));
         assertThat(settings.unlockRetries()).isEqualTo(2);
-        assertThat(settings.turnstileTimeout()).isEqualTo(Duration.ofSeconds(1));
+        assertThat(settings.turnstileTimeout()).isEqualTo(Duration.ofMillis(300));
         assertThat(settings.syncBatchSize()).isEqualTo(100);
         assertThat(settings.maxOfflineDuration()).isEqualTo(Duration.ofHours(4));
         assertThat(settings.pendingEventsAlertThreshold()).isEqualTo(1000);
+    }
+
+    @Test
+    void worstCaseTurnstileWaitFitsTheTurnstileBudget() {
+        GateSettings settings = GateSettings.defaults();
+        Duration worstCase = settings.turnstileTimeout().multipliedBy(settings.unlockRetries() + 1L);
+
+        assertThat(worstCase).isLessThanOrEqualTo(Duration.ofSeconds(1));
     }
 
     @Test
