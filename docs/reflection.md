@@ -1,6 +1,6 @@
 # Team Reflection
 
-In M1 we wrote the requirements, compared six architecture styles, and designed the logical and physical architecture of the TMC system. In M2 we reworked the design around two issues: connection loss in the middle of a transaction, and copied QR codes. For the final milestone we built one module, the Gate Station Software, in Java. This reflection covers what held up, what changed, and what building the code taught us about our own design.
+In M1 we wrote the requirements, compared six architecture styles, and designed the logical and physical architecture of the TMC system. In M2 we reworked the design around two issues: connection loss in the middle of a transaction, and copied QR codes. For the final milestone we first built the Gate Station Software in Java. It turned out too small to show much, so we then built the Mobile App in Kotlin, which became our main code deliverable. This reflection covers what held up, what changed, and what building the code taught us about our own design.
 
 We split the work by section rather than by milestone. One or two people owned each part (requirements, style comparison, logical and physical architecture, views), and we met once a week to read each other's sections aloud before merging them into the shared document. The diagrams were drawn in draw.io and kept in a shared Drive folder, which is why the links in the document point there.
 
@@ -27,6 +27,20 @@ Moving code generation onto the phone fixed both problems. The server issues a d
 
 ## What building the code showed us
 
+### The mobile app
+
+**The platform chose our algorithm.** Our M2 design and the gate module both use Ed25519 signatures. When we built the app, we found that the Android Keystore, where the private key has to live so it never leaves the phone, supports P-256 on every phone we target but Ed25519 only on recent Android versions. We switched the phone to ECDSA P-256 and versioned the QR format as `v2`. The cost is that our own gate module rejects the app's codes until it gets one new validation rule. We designed the key handling on paper without checking what the device could actually store, and the hardware settled the question for us.
+
+**Module boundaries changed a design decision for us.** We split the app into Gradle modules, so the domain cannot import anything from Android. Partway through, the app module tried to build the Room database and DataStore itself, and the build failed, because those libraries are private to the data module. The quick fix was to expose them. Instead we added a small `LocalStorage` class to the data module, which hands out only the domain interfaces. The boundary pushed us toward the better design. With packages inside one module, as in the gate code, nothing would have stopped us.
+
+**Fakes tested our logic, but only a real device tested our assumptions.** All 78 unit tests passed, and the first thing the app did on the emulator was report "Can't reach the server" while the emulator was online. The cause was a missing `INTERNET` permission. The fake server runs inside the app, so we never thought the app needed network access, but Android hides the network from apps without it. A second bug appeared when we turned on airplane mode: the "Online" label sometimes stayed on, because our code asked Android for the current network inside the very callback that reports it is gone. Both bugs were in the one class whose only job is talking to Android, which is exactly the class the fakes replace. We added instrumented tests that toggle airplane mode on the emulator to cover it.
+
+**"The key is in secure hardware" depends on the phone.** The design says the private key never leaves secure hardware. On the emulator, the Device screen shows "Hardware-backed: No", because the emulator's keystore is software only. We show this honestly instead of hiding it, and it reminded us that some security properties in the design are properties of the device, not of our code.
+
+**The QR code got bigger than we pictured.** A `v2` pass carries a certificate, a public key and two signatures, which comes to over 400 characters, so the QR code is dense. We had to enlarge the countdown ring so the code fits inside it. Nobody had asked how big the code would be when we designed it in M2.
+
+### The gate module
+
 **Our dependency check missed the inside of a component.** The module view has a dependency matrix with every entry below the diagonal, so we believed the design had no cycles. That matrix covers modules, not the packages inside the Gate Station Software. When we built it, we created two package cycles without noticing. The first came from putting the storage interfaces next to their SQLite implementations. The second came from validation classes using types from the access flow, which itself uses validation. Both were fixed by moving each interface into the package that calls it, and both fixes were small. But neither cycle would have shown up in any diagram we drew.
 
 **Vague sentences in the design became decisions in the code.** The M2 table says "retry with an idempotency key or query the turnstile status". A design can say "or"; code cannot. We chose retry, because querying status would add a second method to the turnstile interface. Similarly, the project description says TMC talks to the Turnstile Control System "through its API", but nothing describes that API. We had to invent a request format (`POST /gates/{id}/unlock` with an `Idempotency-Key` header) and mark it as an assumption. At design time, "through its API" felt like enough.
@@ -40,6 +54,8 @@ Moving code generation onto the phone fixed both problems. The server issues a d
 - Do the timing arithmetic with the actual configuration values, not just the design budget, before choosing defaults.
 - Write down every external API we depend on as an explicit assumption in M1, with a guessed request and response, so the gap is visible early.
 - Extend the dependency check below module level for any component we plan to build.
+- Check what the target platform supports, such as key types and permissions, before fixing a design decision that depends on it.
+- Run the code on a real device or emulator from the first week, not only in unit tests.
 
 - Start a small piece of code during M1 instead of at the end. Most of what we learned in the last milestone would have been cheaper to learn while the design was still changing.
 - Split the work by flow instead of by section. Because each of us owned a section, the access flow was described in four places (requirements, logical architecture, physical architecture, C&C view) by different people, and the descriptions drifted. One person owning the access flow end to end would have kept it consistent.

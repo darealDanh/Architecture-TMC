@@ -1,193 +1,212 @@
-# SOLID in the Gate Station Software
+# SOLID in the TMC Mobile App
 
-Section 6.2 of our architecture document lists the SOLID principles as design guidelines, and CO-3 makes them a constraint. This document shows where each one appears in the Gate Station Software we built, and where we did not follow it fully.
+Section 6.2 of our architecture document lists the SOLID principles as design guidelines, and CO-3 makes them a constraint. This document shows where each principle appears in the TMC Mobile App, an Android app in Kotlin that lives in `mobile-app/`, and where we did not follow it fully.
 
-The code is in `gate-station/src/main/java/com/tmc/gate` and the tests are in `gate-station/src/test/java/com/tmc/gate`. Every class named below exists in one of those trees. The excerpts are copied from the code, shortened only where marked with `...`.
+The app does what the M2 design asks of the phone:
+- It creates a key pair in the Android Keystore on first sign-in.
+- It gets a device certificate from the server.
+- It signs a fresh QR pass every 15 seconds without a network.
+- It shows the employee's attendance, cached for offline use.
 
-## Packages at a glance
+The server is a fake that runs inside the app. Every class named below exists in `mobile-app/`. The excerpts are copied from the code, shortened only where marked with `...`.
 
-| Package | Contents |
-|---|---|
-| `access` | `GateStation` (the scan-to-unlock flow), `AccessEvent`, `StartupRecovery`, and the ports `AccessEventLog`, `InterruptedUnlocks`, `ReferenceDataReader` |
-| `validation` | `QrValidator`, the seven `ValidationRule` classes, `ReferenceData`, `NonceRegistry` |
-| `credential` | QR format: `CredentialCodec`, `DeviceCertificate`, `ScannedCredential`, `Ed25519` |
-| `turnstile` | `TurnstileGateway` and its three implementations |
-| `sync` | `SyncClient` and the ports `Outbox`, `ReferenceDataWriter`, `EventIntake`, `ReferenceDataSource`, `GateStatusReceiver` |
-| `store` | SQLite implementations of the ports |
-| `alert`, `config` | Guard alerts, `ConfigReader` and `GateSettings` |
-| `demo` | Wiring, the simulated phone, server and central system |
+The repository also contains `gate-station/`, an earlier Java module for the gate side. This document is about the app.
+
+## Modules
+
+| Module | Kind | Contents |
+|---|---|---|
+| `:core:domain` | Pure Kotlin | Entities, use cases, and the interfaces (ports) they need |
+| `:core:data` | Android library | Room cache, DataStore session and certificate, network status, offline-first repository |
+| `:core:security` | Android library | Android Keystore key store and signer |
+| `:fake-server` | Pure Kotlin | In-process stand-in for tmc-central |
+| `:app` | Android app | Compose screens, ViewModels, Hilt wiring |
+
+These are the module dependencies, taken from the `build.gradle.kts` files:
+
+```
+:core:domain   -> (nothing in the project)
+:core:data     -> :core:domain
+:core:security -> :core:domain
+:fake-server   -> :core:domain
+:app           -> all of the above
+```
 
 ## S: Single Responsibility
 
-Each class has one reason to change. The clearest case is `GateStation`. Its job is the access flow of Section 2.1 of the C&C view: the order of the steps, how a turnstile result maps to the stored unlock status, and when the guard gets an alert. This is the order of the steps:
-
-```java
-public AccessEvent handleScan(String rawQr) {
-    Instant now = clock.instant();
-    ScannedCredential credential;
-    try {
-        credential = codec.decode(rawQr);
-    } catch (MalformedCredentialException e) {
-        return record(AccessEvent.rejected(gate, null, RejectionReason.MALFORMED, now));
-    }
-    String employeeId = credential.certificate().employeeId();
-    Optional<RejectionReason> violation =
-            validator.firstViolation(credential, new ValidationContext(referenceData.current(), gate.factoryId(), now));
-    if (violation.isPresent()) {
-        return record(AccessEvent.rejected(gate, employeeId, violation.get(), now));
-    }
-    nonces.markUsed(credential.nonce());
-    return unlock(record(AccessEvent.accepted(gate, employeeId, now)));
-}
-```
-
-It does not parse QR bytes, check signatures, write SQL or speak HTTP. Each of those has its own class, and each class changes for a different reason:
+Each class has one reason to change. In the domain, every user action is one class:
 
 | Class | Changes when |
 |---|---|
-| `CredentialCodec` | The QR payload format changes |
-| `CertificateSignatureRule`, `FreshnessRule`, ... | One validation rule changes |
-| `SqliteAccessEventLog` | The local storage changes |
-| `HttpTurnstileGateway` | The Turnstile Control System API changes (AD-08) |
-| `SyncClient` | The synchronisation protocol with central changes (NFR-07) |
-| `GateStation` | The order of the access flow changes (AD-06) |
+| `SignInAndEnroll` | The sign-in and first enrollment steps change |
+| `GeneratePass` | The way one pass is built and signed changes |
+| `ObservePassState` | The refresh timing or expiry handling changes |
+| `GetMonthlyAttendance` | The way a month is assembled changes |
+| `RenewCertificate`, `GetDeviceStatus`, `SignOut` | Their single action changes |
 
-The order in `handleScan` is where AD-06 lives: `record(...)` writes the event before `unlock(...)` calls the turnstile. The test `eventIsStoredBeforeUnlockIsRequested` in `GateStationTest` checks this. Its fake turnstile looks up the event in the store and fails if the event is not there yet.
+`GeneratePass` builds one pass. It does not know about timers, storage or screens:
+
+```kotlin
+operator fun invoke(certificate: DeviceCertificate): Pass {
+    val issuedAt = clock.instant()
+    val nonce = nonces.next()
+    val signature = signer.sign(PassPayloadCodec.signedContent(certificate, issuedAt, nonce))
+    return Pass(
+        payload = PassPayloadCodec.encode(certificate, issuedAt, nonce, signature),
+        issuedAt = issuedAt,
+        refreshAt = issuedAt.plus(refreshInterval),
+    )
+}
+```
+
+The QR format lives in `PassPayloadCodec`. The countdown lives in `ObservePassState`. Drawing the ring lives in `CountdownRing` in the UI. Changing the refresh interval touches one constant. Changing the payload format touches one object.
+
+ViewModels hold screen state and nothing else. `SignInViewModel` turns the outcome of `SignInAndEnroll` into what the screen shows, and the sign-in logic stays in the use case:
+
+```kotlin
+val error = try {
+    signInAndEnroll(current.employeeId, current.password)
+    null
+} catch (e: InvalidCredentialsException) {
+    WRONG_CREDENTIALS
+} catch (e: ServerUnreachableException) {
+    UNREACHABLE
+}
+```
 
 ## O: Open/Closed
 
-Section 6.2 says a new access rule should be a new class, not an edit. In the code, every check from FR-AT-01 is a separate `ValidationRule`:
+The attendance screen flags days that need attention. Each flag is a separate rule:
 
-```java
-@FunctionalInterface
-public interface ValidationRule {
+```kotlin
+fun interface AttendanceRule {
 
-    Optional<RejectionReason> check(ScannedCredential credential, ValidationContext context);
+    fun flags(record: AttendanceRecord): List<DayFlag>
 }
 ```
 
-`QrValidator` runs the rules in order and returns the first failure. It never looks inside them:
+```kotlin
+class MissingExitRule : AttendanceRule {
 
-```java
-public Optional<RejectionReason> firstViolation(ScannedCredential credential, ValidationContext context) {
-    return rules.stream()
-            .map(rule -> rule.check(credential, context))
-            .flatMap(Optional::stream)
-            .findFirst();
-}
-```
-
-Suppose TMC later wants to block entry outside an employee's shift. That would be a new `ShiftRule` class added to the list. `QrValidatorTest.newRuleIsAddedWithoutChangingExistingRules` does exactly this with a lambda, and no existing rule is touched.
-
-The second example came from M2. The Issue 1 table says that when the turnstile does not answer, the gate should retry with an idempotency key. We already had `HttpTurnstileGateway`. Instead of putting a loop inside it, we wrapped it:
-
-```java
-public UnlockResult unlock(String gateId, UUID eventId) {
-    UnlockResult result = delegate.unlock(gateId, eventId);
-    for (int retry = 0; retry < maxRetries && result == UnlockResult.UNKNOWN; retry++) {
-        result = delegate.unlock(gateId, eventId);
-    }
-    return result;
-}
-```
-
-`RetryingTurnstileGateway` works around any `TurnstileGateway`, so the retry rule applies to the real adapter and the simulator alike. Neither of them was edited to get it.
-
-## L: Liskov Substitution
-
-Section 6.2 gives this example: "A simulated turnstile adapter used for testing must behave like the real adapter from the caller's point of view." We turned that sentence into a test. `TurnstileGatewayContract` is an abstract test class, and each implementation must pass it:
-
-```java
-abstract class TurnstileGatewayContract {
-
-    abstract TurnstileGateway gatewayThatUnlocks();
-
-    @Test
-    void repeatedUnlockWithSameEventIdIsAccepted() {
-        TurnstileGateway gateway = gatewayThatUnlocks();
-        UUID eventId = UUID.randomUUID();
-
-        assertThat(gateway.unlock("BD-GATE-01", eventId)).isEqualTo(UnlockResult.UNLOCKED);
-        assertThat(gateway.unlock("BD-GATE-01", eventId)).isEqualTo(UnlockResult.UNLOCKED);
-    }
+    override fun flags(record: AttendanceRecord): List<DayFlag> =
+        if (record.entry != null && record.exit == null) listOf(FLAG) else emptyList()
     ...
 }
 ```
 
-`TurnstileGatewayContractTest` runs it against `SimulatedTurnstileGateway`, `HttpTurnstileGateway` (against a local HTTP server) and `RetryingTurnstileGateway`.
+`AttendanceSummarizer` runs every rule and never looks inside one:
 
-Substitution also depends on how failures are reported. `GateStation` expects one of three answers: `UNLOCKED`, `FAILED` or `UNKNOWN`. If the HTTP adapter threw an exception on a timeout while the simulator returned `UNKNOWN`, swapping one for the other would change the gate's behaviour. So `HttpTurnstileGateway` turns every network problem into `UNKNOWN`:
+```kotlin
+.map { record -> AttendanceDay(record, rules.flatMap { it.flags(record) }, workedOn(record)) }
+```
 
-```java
-} catch (IOException e) {
-    return UnlockResult.UNKNOWN;
-} catch (InterruptedException e) {
-    Thread.currentThread().interrupt();
-    return UnlockResult.UNKNOWN;
+Suppose HR later wants late arrivals flagged. That is a new class added to the list. The test `newRuleAddsFlagWithoutChangingExistingRules` in `AttendanceSummarizerTest` does exactly this with a "Late" rule, and neither `MissingExitRule` nor `ManualEntryRule` changes. The severity on each `DayFlag` decides whether it counts toward "To review". A new rule also chooses its own severity, so the screen needs no change either.
+
+## L: Liskov Substitution
+
+Section 6.2 says any implementation of an interface should work wherever the interface is expected. We check this with a shared contract, not by trusting it.
+
+`DeviceKeyStoreContract` in the domain test fixtures holds the checks every key store must pass:
+
+```kotlin
+fun signaturesVerifyWithPublicKey() {
+    store.createKey()
+    val data = "pass content".toByteArray()
+
+    val signature = signer.sign(data)
+
+    assertTrue(EcdsaP256.verify(assertNotNull(store.publicKey()), data, signature))
 }
 ```
 
-The final review found a gap here. An adapter can still break the contract by accident, for example with an unchecked exception from a malformed gate ID. Before the fix, that left the event stuck at `PENDING` with no alert. `GateStation.requestUnlock` now treats any exception from an adapter as `UNKNOWN`, so the guard is alerted whichever implementation is plugged in. `crashingTurnstileAdapterIsTreatedAsUnknown` covers it.
+Two implementations run it:
+- `InMemoryDeviceKeyStore`, the software key used in unit tests, runs it in `DeviceUseCasesTest.inMemoryKeyStoreMeetsTheContract`.
+- `AndroidKeystoreDeviceKeyStore`, the real hardware-backed store, runs it in the instrumented test `AndroidKeystoreContractTest` on a phone or emulator.
+
+Both pass. Because they do, every domain test that uses the in-memory store also tells us something true about the real one.
+
+The server works the same way:
+- `FakeTmcServer` (the app's fake) and `StubServer` (a small test double) both implement `AuthApi`, `EnrollmentApi` and `AttendanceApi`.
+- The use cases run against either one unchanged.
+- An HTTP client for the real tmc-central would be a third implementation.
 
 ## I: Interface Segregation
 
-One SQLite table holds all access events, but the classes that use it need different things from it. We split the interfaces by client:
+The server is not one big interface. Each use case depends only on the part it uses:
 
-| Interface | Methods | Used by |
-|---|---|---|
-| `AccessEventLog` | `append`, `updateUnlockStatus`, `find` | `GateStation` |
-| `Outbox` | `pending`, `markSynced`, `pendingCount` | `SyncClient` |
-| `InterruptedUnlocks` | `resolveAsUnknown` | `StartupRecovery` |
+```kotlin
+interface AuthApi {
 
-`SqliteAccessEventLog` implements all three:
+    suspend fun signIn(employeeId: String, password: String): Session
+}
 
-```java
-public final class SqliteAccessEventLog implements AccessEventLog, Outbox, InterruptedUnlocks {
+interface EnrollmentApi {
+
+    suspend fun issueCertificate(token: String, devicePublicKey: ByteArray): DeviceCertificate
+}
+
+interface AttendanceApi {
+
+    suspend fun monthlyAttendance(token: String, month: YearMonth): List<AttendanceRecord>
+}
 ```
 
-`GateStation` cannot mark an event as synced, and `SyncClient` cannot append one. If they could, a bug in the sync code could mark events as delivered that central never received, which is the loss NFR-07 forbids.
+`RenewCertificate` sees only `EnrollmentApi`. `OfflineFirstAttendanceRepository` sees only `AttendanceApi`.
 
-Reference data follows the same pattern. The gate only reads it (`ReferenceDataReader.current()`), and only the Sync Client replaces it (`ReferenceDataWriter.replace(...)`). `SqliteReferenceData` implements both. Alerts work the same way: `GateStation` receives an `AlertSink` with a single `raise` method, because the gate never clears an alert.
+The device key is split the same way:
+- `DeviceKeyStore` creates, reads and deletes the key.
+- `PayloadSigner` has one method, `sign`.
 
-On the turnstile side, `TurnstileGateway` has a single method. This is the "gate station depends only on an unlock interface" from Section 6.2. The M2 table offered "retry or query the turnstile status". We chose retry partly because it needs no second method on this interface.
+`GeneratePass` runs every 15 seconds and receives only a `PayloadSigner`, so pass generation cannot delete or replace the device key. Only `SignInAndEnroll`, `RenewCertificate` and `SignOut` get a `DeviceKeyStore`.
 
 ## D: Dependency Inversion
 
-Section 6.2 says business logic should depend on abstractions it defines, with source dependencies pointing toward the business rules. In practice, each interface lives in the package of the class that calls it, not in the package of the class that implements it:
+The interfaces are owned by the domain (`com.tmc.mobile.domain.port`), and the outer modules implement them:
 
-- `AccessEventLog`, `InterruptedUnlocks` and `ReferenceDataReader` are in `access`, next to `GateStation`.
-- `Outbox`, `ReferenceDataWriter` and `EventIntake` are in `sync`, next to `SyncClient`.
-- `NonceRegistry` is in `validation`, next to `ReplayRule`.
+| Domain interface | Implementation | Module |
+|---|---|---|
+| `DeviceKeyStore`, `PayloadSigner` | `AndroidKeystoreDeviceKeyStore`, `AndroidKeystorePayloadSigner` | `:core:security` |
+| `SessionStore`, `CertificateStore` | `DataStoreSessionStore`, `DataStoreCertificateStore` | `:core:data` |
+| `AttendanceCache` | `RoomAttendanceCache` | `:core:data` |
+| `NetworkStatus` | `ConnectivityNetworkStatus` | `:core:data` |
+| `AttendanceRepository` | `OfflineFirstAttendanceRepository` | `:core:data` |
+| `AuthApi`, `EnrollmentApi`, `AttendanceApi` | `FakeTmcServer` | `:fake-server` |
 
-The `store` package implements them, so it imports `access`, `sync` and `validation`. None of those packages import `store`. These are the package dependencies of the main code today:
+The build enforces this, not just a convention. `:core:domain` is a plain Kotlin module with no Android dependency, so a use case that imports Room, the Keystore or a Compose class does not compile. The domain's 34 unit tests run on a normal JVM, with no emulator and no Android framework.
 
-```
-access     -> alert, credential, turnstile, validation
-sync       -> access, alert, config, validation
-validation -> config, credential
-store      -> access, credential, sync, validation
-demo       -> every package above (it wires them together)
-turnstile, credential, alert, config -> (none)
-```
+Concrete classes meet only in the Hilt modules in `app/di`. The fake server is named in exactly one file:
 
-We did not start this way. The plan put the store interfaces in `store`, and `GateStation` would then have imported `store` while `store` imported `AccessEvent` from `access`. That is a cycle. We moved the interfaces to their callers while building Task 6. Writing this document, we found a second cycle: `validation` used `RejectionReason` and `GateIdentity` from `access`, while `access` used `validation`. We moved `RejectionReason` into `validation`, and gave `ValidationContext` only the factory ID it needs instead of the whole `GateIdentity`. Both fixes were package moves; no logic changed.
+```kotlin
+@Provides
+@Singleton
+fun server(network: NetworkStatus, clock: Clock): FakeTmcServer = FakeTmcServer(network, clock)
 
-Concrete classes meet in one place, `demo/Demo.java`:
-
-```java
-GateStation station = new GateStation(GATE, new CredentialCodec(),
-        QrValidator.standard(settings, nonces), referenceData, nonces, events,
-        new RetryingTurnstileGateway(SimulatedTurnstileGateway.sequence(...), settings.unlockRetries()),
-        alerts, clock);
+@Provides
+fun authApi(server: FakeTmcServer): AuthApi = server
 ```
 
-A real kiosk build would change only this wiring. It would pass `HttpTurnstileGateway` instead of the simulator, and an HTTPS client for tmc-central instead of `InMemoryCentral`. Time is injected as `java.time.Clock` for the same reason, so tests can move the clock four hours forward to trigger the offline alert.
+Connecting the app to a real tmc-central means replacing `ServerModule`. No screen, ViewModel or use case changes.
+
+One moment while building showed the rule at work. The first version of `DataModule` in `:app` built the Room database and DataStore itself. The build failed, because `:core:data` keeps Room and DataStore as private implementation details, so `:app` could not see their types. The quick fix was to expose those libraries to `:app`. Instead, we added `LocalStorage` to `:core:data`. It builds the database and preferences internally and hands out only domain interfaces:
+
+```kotlin
+class LocalStorage(context: Context) {
+    ...
+    val sessionStore: SessionStore = DataStoreSessionStore(preferences)
+
+    val certificateStore: CertificateStore = DataStoreCertificateStore(preferences)
+
+    val attendanceCache: AttendanceCache = RoomAttendanceCache(database.attendanceDao())
+}
+```
+
+`:app` now has no dependency on Room or DataStore at all.
 
 ## Where we bend the rules
 
-- `AccessEvent` has nullable fields. `rejectionReason` is null for accepted events, and `employeeId` is null when the QR could not be read at all. Separate types for accepted and rejected events would be stricter, but the event is one row in one table and is synced as one record, so we kept one type.
-- `SyncClient` depends on the concrete `Alerts` class, not an interface. It needs to raise, resolve and list alerts, and only one implementation exists. If a second appears, an interface can be extracted then.
-- Adding a rule to the default set still edits one line. `ShiftRule` from the Open/Closed example needs no change to existing rules, but `QrValidator.standard(...)` has to list it. The edit is to the composition, not to any rule's logic.
-- `SqliteAccessEventLog` implements three interfaces. It is split for its clients, not internally. The three roles share one table, and splitting the class would mean three classes writing the same rows.
-- The Turnstile API format is our assumption. `HttpTurnstileGateway` sends `POST /gates/{gateId}/unlock` with an `Idempotency-Key` header. The real Turnstile Control System API is not in the project description. If it differs, only this class changes, which is the point of AD-08.
-- Replay protection is per gate. Used nonces are stored in each kiosk's Local Store, and kiosks do not talk to each other offline. A copied QR code could pass once at a second gate within its validity window, which is 30 seconds plus a 5-second tolerance. We accepted this, the same way M2 accepts that revocations reach a gate only at its next sync.
+- **The gate does not accept the app's codes yet.** The app signs with ECDSA P-256 in a `v2` format, because the Android Keystore supports P-256 on every phone the app targets (Android 8 and later), while Keystore support for the Ed25519 keys our gate module expects arrived only in recent Android versions. The format keeps the same structure and uses standard encodings, so a gate could accept `v2` by adding one validation rule. That rule does not exist yet.
+- **`FakeTmcServer` implements three interfaces.** The real server would too. The split matters on the client side, where each use case receives only the one it needs.
+- **`DeviceKeyStoreContract` is a plain class of check functions, not an abstract test class.** Domain tests use JUnit 6 and Android instrumented tests use JUnit 4, so a shared abstract test class would only work for one of them. Each test class calls the contract's functions itself.
+- **`AndroidKeystoreDeviceKeyStore` and `AndroidKeystorePayloadSigner` must use the same key alias.** They are separate classes for Interface Segregation, but they share a key. Nothing but the shared default value keeps them in step.
+- **Wiring the domain takes more code.** The domain does not depend on Hilt, so its classes carry no `@Inject` annotations. `DomainModule` builds every use case by hand. This is the cost of keeping the domain free of frameworks.
+- **ViewModels catch specific exceptions.** A new failure type from a use case needs a new `catch` in the ViewModel that shows it. A sealed result type would make that impossible to forget, at the cost of more types.
