@@ -19,16 +19,12 @@ class ConnectivityNetworkStatus(context: Context, scope: CoroutineScope) : Netwo
 
     override val isOnline: StateFlow<Boolean> = callbackFlow {
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                trySend(currentlyOnline())
-            }
-
             override fun onLost(network: Network) {
-                trySend(currentlyOnline())
+                trySend(false)
             }
 
             override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-                trySend(currentlyOnline())
+                trySend(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
             }
         }
         connectivity.registerDefaultNetworkCallback(callback)
