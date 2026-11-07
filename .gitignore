@@ -13,3 +13,10 @@ CLAUDE.md
 AGENT.md
 AGENTS.md
 docs/superpowers/
+.playwright-mcp/
+mobile-app/.gradle/
+mobile-app/**/build/
+mobile-app/local.properties
+.idea/
+.kotlin/
+*.iml

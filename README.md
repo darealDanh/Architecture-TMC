@@ -1,63 +1,74 @@
-# TMC Gate Station
+# TMC Mobile App
 
 Software architecture course project for TMC Manufacturing: QR code access control and attendance for two factories. The full design is in the team's architecture report.
 
-This repository implements one module of that design, the Gate Station Software that runs at every gate. It validates device-bound QR codes offline, records each access event before unlocking the turnstile, and synchronises events with the central system without losing or duplicating them.
+This repository implements the Mobile App from that design, an Android app in Kotlin with Jetpack Compose. It follows the M2 solution for copied QR codes:
+- On first sign-in, the phone creates a private key in the Android Keystore and gets a device certificate from the server.
+- It signs a fresh QR pass every 15 seconds, with or without a network.
+- It shows the employee's attendance, and keeps a copy for offline use.
+
+The server is a fake that runs inside the app. The code is structured to show the SOLID principles. See `docs/solid.md`.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `gate-station/` | Java 17 Maven project |
-| `docs/solid.md` | How the code applies the SOLID principles |
+| `mobile-app/` | Android app, a Gradle build with five modules |
+| `gate-station/` | Earlier Java module for the gate side (see below) |
+| `docs/solid.md` | How the app applies the SOLID principles |
 | `docs/reflection.md` | Team reflection |
-| `.github/workflows/ci.yml` | Build and test on every pull request and push to `main` |
+| `.github/workflows/ci.yml` | Builds and tests both modules on every pull request and push to `main` |
 
-## Build and test
+## Running the app
 
-Only a JDK 17 or newer is needed. The Maven Wrapper downloads Maven on first use.
+1. Open the `mobile-app/` folder in Android Studio.
+2. Wait for the Gradle sync to finish.
+3. Pick a virtual device (we use `Medium_Phone_API_37.0`) and press Run.
+
+Test accounts:
+
+| Employee ID | Password | Name | Factory |
+|---|---|---|---|
+| E001 | `password` | Nguyen Van A | Binh Duong |
+| E002 | `password` | Tran Thi B | Long An |
+
+Things to try:
+- Turn on airplane mode. The pass keeps refreshing and shows "Offline".
+- Open Attendance offline. The current month shows saved data, and a month never opened shows "No data offline for this month".
+- Sign out from the Device tab, then sign in as the other employee.
+
+## Building and testing from the command line
+
+You need a JDK 17 or newer and the Android SDK. Android Studio installs both.
+
+```
+cd mobile-app
+./gradlew assembleDebug test                # unit tests, no device needed
+./gradlew connectedDebugAndroidTest         # instrumented tests, needs a running emulator or phone
+```
+
+Use `gradlew.bat` instead of `./gradlew` in Windows PowerShell or cmd. The instrumented tests check the real Android Keystore against the same contract as the in-memory test key store, and check that network detection follows airplane mode.
+
+## Gate Station module
+
+`gate-station/` is a Java 17 Maven project we built first. It covers the gate side of the design:
+- offline QR validation
+- writing each access event before unlocking the turnstile
+- syncing events to central without loss or duplicates
 
 ```
 cd gate-station
-./mvnw verify        # Linux, macOS, WSL, Git Bash
-mvnw.cmd verify      # Windows
+./mvnw verify
+java -jar target/gate-station-0.1.0.jar
 ```
 
-## Demo
-
-```
-java -jar gate-station/target/gate-station-0.1.0.jar
-```
-
-The demo runs one gate at Binh Duong against a simulated turnstile and an in-memory central system. It stores events in `gate-station-demo.db` in the current directory.
-
-```
-Initial sync                   ONLINE    uploaded 0
-E001 shows a fresh code        ACCEPTED  UNLOCKED
-Same code scanned again        REJECTED  REPLAYED
-E001 code from 40 s ago        REJECTED  QR_EXPIRED
-E002 (revoked) shows a code    REJECTED  REVOKED
-Turnstile stops answering      ACCEPTED  UNLOCK_UNKNOWN
-Sync while WAN is down         OFFLINE   uploaded 0
-E001 scans while offline       ACCEPTED  UNLOCKED
-Sync after WAN returns         ONLINE    uploaded 6
-central stored 6 events, 0 still pending at the gate
-active alert: UNLOCK_UNKNOWN 759075d1-6308-4769-b09b-d122bccae123
-```
-
-Rejected scans are stored and synced too, because the audit log needs every attempt (FR-AT-04). The turnstile that stops answering is retried twice with the same event ID before the gate records `UNLOCK_UNKNOWN` and raises an alert for the security guard.
-
-## Running scans and sync together
-
-On a kiosk, the Sync Client runs in the background while the gate keeps scanning. Each side opens its own `LocalDatabase` connection to the same SQLite file, as `Demo` does. SQLite in WAL mode lets them work side by side, and `busy_timeout` makes one writer wait briefly for the other instead of failing. Do not share one connection between threads: replacing reference data runs in a transaction, and a scan written on the same connection during that transaction would be rolled back with it.
-
-The outbox does not send an accepted event while its unlock result is still `PENDING`. It is sent once the turnstile result is known, or after a restart, when `StartupRecovery` marks it `UNLOCK_UNKNOWN`.
+It accepts the gate's original `v1` QR format, not the app's `v2`. The reason is explained in `docs/solid.md`.
 
 ## Protecting `main` on GitHub
 
-After pushing the repository, make the CI check required so a pull request cannot be merged while the build or tests fail:
+After pushing the repository, make the CI checks required so a pull request cannot be merged while a build or test fails:
 
 1. Settings → Branches → Add branch protection rule.
 2. Branch name pattern: `main`.
 3. Enable "Require a pull request before merging" and "Require status checks to pass before merging".
-4. Select the `build` check and save.
+4. Select the `build` and `android` checks and save.
