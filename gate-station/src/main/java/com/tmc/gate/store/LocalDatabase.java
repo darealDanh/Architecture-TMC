@@ -12,6 +12,7 @@ public final class LocalDatabase implements AutoCloseable {
     private static final List<String> SETUP = List.of(
             "PRAGMA journal_mode=WAL",
             "PRAGMA synchronous=FULL",
+            "PRAGMA busy_timeout=1000",
             """
             CREATE TABLE IF NOT EXISTS access_events (
                 id TEXT PRIMARY KEY,

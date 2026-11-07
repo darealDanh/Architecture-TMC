@@ -50,7 +50,8 @@ public final class Demo {
         Phone employee = new Phone("E001", authority, certificateExpiry);
         Phone revokedEmployee = new Phone("E002", authority, certificateExpiry);
 
-        try (LocalDatabase database = LocalDatabase.open(databaseFile)) {
+        try (LocalDatabase database = LocalDatabase.open(databaseFile);
+                LocalDatabase syncDatabase = LocalDatabase.open(databaseFile)) {
             SqliteAccessEventLog events = new SqliteAccessEventLog(database);
             SqliteNonceRegistry nonces = new SqliteNonceRegistry(database);
             SqliteReferenceData referenceData = new SqliteReferenceData(database);
@@ -61,8 +62,8 @@ public final class Demo {
                             UnlockResult.UNLOCKED, UnlockResult.UNKNOWN, UnlockResult.UNKNOWN,
                             UnlockResult.UNKNOWN, UnlockResult.UNLOCKED), settings.unlockRetries()),
                     alerts, clock);
-            SyncClient sync = new SyncClient(GATE, events, referenceData, central, central, central,
-                    alerts, settings, clock);
+            SyncClient sync = new SyncClient(GATE, new SqliteAccessEventLog(syncDatabase),
+                    new SqliteReferenceData(syncDatabase), central, central, central, alerts, settings, clock);
 
             new StartupRecovery(events, alerts, clock).run();
             printSync(out, "Initial sync", sync.syncOnce());

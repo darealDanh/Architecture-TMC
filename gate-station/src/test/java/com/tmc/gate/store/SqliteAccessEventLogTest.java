@@ -40,6 +40,10 @@ class SqliteAccessEventLogTest {
         database.close();
     }
 
+    private static AccessEvent unlocked(GateIdentity gate, String employeeId, Instant at) {
+        return AccessEvent.accepted(gate, employeeId, at).withUnlockStatus(UnlockStatus.UNLOCKED);
+    }
+
     @Test
     void appendedEventSurvivesReopen() {
         AccessEvent event = AccessEvent.accepted(GATE, "E001", T0);
@@ -72,9 +76,9 @@ class SqliteAccessEventLogTest {
 
     @Test
     void pendingReturnsUnsyncedEventsOldestFirstUpToLimit() {
-        AccessEvent third = AccessEvent.accepted(GATE, "E003", T0.plusSeconds(2));
-        AccessEvent first = AccessEvent.accepted(GATE, "E001", T0);
-        AccessEvent second = AccessEvent.accepted(GATE, "E002", T0.plusSeconds(1));
+        AccessEvent third = unlocked(GATE, "E003", T0.plusSeconds(2));
+        AccessEvent first = unlocked(GATE, "E001", T0);
+        AccessEvent second = unlocked(GATE, "E002", T0.plusSeconds(1));
         log.append(third);
         log.append(first);
         log.append(second);
@@ -84,9 +88,9 @@ class SqliteAccessEventLogTest {
 
     @Test
     void markSyncedRemovesEventsFromOutbox() {
-        AccessEvent first = AccessEvent.accepted(GATE, "E001", T0);
-        AccessEvent second = AccessEvent.accepted(GATE, "E002", T0.plusSeconds(1));
-        AccessEvent third = AccessEvent.accepted(GATE, "E003", T0.plusSeconds(2));
+        AccessEvent first = unlocked(GATE, "E001", T0);
+        AccessEvent second = unlocked(GATE, "E002", T0.plusSeconds(1));
+        AccessEvent third = unlocked(GATE, "E003", T0.plusSeconds(2));
         log.append(first);
         log.append(second);
         log.append(third);
@@ -109,6 +113,27 @@ class SqliteAccessEventLogTest {
         assertThat(log.resolveAsUnknown()).containsExactly(interrupted.id());
         assertThat(log.find(interrupted.id())).map(AccessEvent::unlockStatus).contains(UnlockStatus.UNLOCK_UNKNOWN);
         assertThat(log.find(completed.id())).map(AccessEvent::unlockStatus).contains(UnlockStatus.UNLOCKED);
+    }
+
+    @Test
+    void eventWaitingForUnlockResultIsNotSentUntilTheResultIsKnown() {
+        AccessEvent event = AccessEvent.accepted(GATE, "E001", T0);
+        log.append(event);
+
+        assertThat(log.pending(10)).isEmpty();
+
+        log.updateUnlockStatus(event.id(), UnlockStatus.UNLOCKED);
+
+        assertThat(log.pending(10)).containsExactly(event.withUnlockStatus(UnlockStatus.UNLOCKED));
+    }
+
+    @Test
+    void writersWaitForEachOtherInsteadOfFailing() throws SQLException {
+        try (Statement statement = database.connection().createStatement();
+                ResultSet result = statement.executeQuery("PRAGMA busy_timeout")) {
+            result.next();
+            assertThat(result.getInt(1)).isEqualTo(1000);
+        }
     }
 
     @Test

@@ -73,12 +73,20 @@ public final class GateStation {
     }
 
     private AccessEvent unlock(AccessEvent event) {
-        UnlockStatus status = toStatus(turnstile.unlock(gate.gateId(), event.id()));
+        UnlockStatus status = toStatus(requestUnlock(event));
         events.updateUnlockStatus(event.id(), status);
         if (status == UnlockStatus.UNLOCK_UNKNOWN) {
             alerts.raise(new Alert(AlertType.UNLOCK_UNKNOWN, event.id().toString(), clock.instant()));
         }
         return event.withUnlockStatus(status);
+    }
+
+    private UnlockResult requestUnlock(AccessEvent event) {
+        try {
+            return turnstile.unlock(gate.gateId(), event.id());
+        } catch (RuntimeException e) {
+            return UnlockResult.UNKNOWN;
+        }
     }
 
     private static UnlockStatus toStatus(UnlockResult result) {

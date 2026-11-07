@@ -2,7 +2,7 @@
 
 Section 6.2 of our architecture document lists the SOLID principles as design guidelines, and CO-3 makes them a constraint. This document shows where each one appears in the Gate Station Software we built, and where we did not follow it fully.
 
-The code is in `gate-station/src/main/java/com/tmc/gate`. Every class named below exists in that tree. The excerpts are copied from the code, shortened only where marked with `...`.
+The code is in `gate-station/src/main/java/com/tmc/gate` and the tests are in `gate-station/src/test/java/com/tmc/gate`. Every class named below exists in one of those trees. The excerpts are copied from the code, shortened only where marked with `...`.
 
 ## Packages at a glance
 
@@ -19,7 +19,7 @@ The code is in `gate-station/src/main/java/com/tmc/gate`. Every class named belo
 
 ## S: Single Responsibility
 
-Each class has one reason to change. The clearest case is `GateStation`. It decides the order of the steps in Section 2.1 of the C&C view, and nothing else:
+Each class has one reason to change. The clearest case is `GateStation`. Its job is the access flow of Section 2.1 of the C&C view: the order of the steps, how a turnstile result maps to the stored unlock status, and when the guard gets an alert. This is the order of the steps:
 
 ```java
 public AccessEvent handleScan(String rawQr) {
@@ -127,6 +127,8 @@ Substitution also depends on how failures are reported. `GateStation` expects on
 }
 ```
 
+The final review found a gap here. An adapter can still break the contract by accident, for example with an unchecked exception from a malformed gate ID. Before the fix, that left the event stuck at `PENDING` with no alert. `GateStation.requestUnlock` now treats any exception from an adapter as `UNKNOWN`, so the guard is alerted whichever implementation is plugged in. `crashingTurnstileAdapterIsTreatedAsUnknown` covers it.
+
 ## I: Interface Segregation
 
 One SQLite table holds all access events, but the classes that use it need different things from it. We split the interfaces by client:
@@ -164,6 +166,7 @@ access     -> alert, credential, turnstile, validation
 sync       -> access, alert, config, validation
 validation -> config, credential
 store      -> access, credential, sync, validation
+demo       -> every package above (it wires them together)
 turnstile, credential, alert, config -> (none)
 ```
 
@@ -182,9 +185,9 @@ A real kiosk build would change only this wiring. It would pass `HttpTurnstileGa
 
 ## Where we bend the rules
 
-- **`AccessEvent` has nullable fields.** `rejectionReason` is null for accepted events, and `employeeId` is null when the QR could not be read at all. Separate types for accepted and rejected events would be stricter, but the event is one row in one table and is synced as one record, so we kept one type.
-- **`SyncClient` depends on the concrete `Alerts` class**, not an interface. It needs to raise, resolve and list alerts, and only one implementation exists. If a second appears, an interface can be extracted then.
-- **Adding a rule to the default set edits one line.** `ShiftRule` from the Open/Closed example needs no change to existing rules, but `QrValidator.standard(...)` still has to list it. The edit is to the composition, not to any rule's logic.
-- **One class implements three interfaces.** `SqliteAccessEventLog` is split for its clients, not internally. The three roles share one table, and splitting the class would mean three classes writing the same rows.
-- **The Turnstile API format is our assumption.** `HttpTurnstileGateway` sends `POST /gates/{gateId}/unlock` with an `Idempotency-Key` header. The real Turnstile Control System API is not in the project description. If it differs, only this class changes, which is the point of AD-08.
-- **Replay protection is per gate.** Used nonces are stored in each kiosk's Local Store, and kiosks do not talk to each other offline. A copied QR code could pass once at a second gate within its validity window, which is 30 seconds plus a 5-second tolerance. We accepted this, the same way M2 accepts that revocations reach a gate only at its next sync.
+- `AccessEvent` has nullable fields. `rejectionReason` is null for accepted events, and `employeeId` is null when the QR could not be read at all. Separate types for accepted and rejected events would be stricter, but the event is one row in one table and is synced as one record, so we kept one type.
+- `SyncClient` depends on the concrete `Alerts` class, not an interface. It needs to raise, resolve and list alerts, and only one implementation exists. If a second appears, an interface can be extracted then.
+- Adding a rule to the default set still edits one line. `ShiftRule` from the Open/Closed example needs no change to existing rules, but `QrValidator.standard(...)` has to list it. The edit is to the composition, not to any rule's logic.
+- `SqliteAccessEventLog` implements three interfaces. It is split for its clients, not internally. The three roles share one table, and splitting the class would mean three classes writing the same rows.
+- The Turnstile API format is our assumption. `HttpTurnstileGateway` sends `POST /gates/{gateId}/unlock` with an `Idempotency-Key` header. The real Turnstile Control System API is not in the project description. If it differs, only this class changes, which is the point of AD-08.
+- Replay protection is per gate. Used nonces are stored in each kiosk's Local Store, and kiosks do not talk to each other offline. A copied QR code could pass once at a second gate within its validity window, which is 30 seconds plus a 5-second tolerance. We accepted this, the same way M2 accepts that revocations reach a gate only at its next sync.

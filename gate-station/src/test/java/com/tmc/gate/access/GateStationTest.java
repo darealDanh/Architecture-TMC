@@ -139,6 +139,19 @@ class GateStationTest {
     }
 
     @Test
+    void crashingTurnstileAdapterIsTreatedAsUnknown() {
+        TurnstileGateway crashing = (gateId, eventId) -> {
+            throw new IllegalArgumentException("bad gate id");
+        };
+
+        AccessEvent event = station(crashing).handleScan(phone.showQr(NOW));
+
+        assertThat(event.unlockStatus()).isEqualTo(UnlockStatus.UNLOCK_UNKNOWN);
+        assertThat(events.find(event.id())).map(AccessEvent::unlockStatus).contains(UnlockStatus.UNLOCK_UNKNOWN);
+        assertThat(alerts.isActive(AlertType.UNLOCK_UNKNOWN)).isTrue();
+    }
+
+    @Test
     void turnstileFailureIsRecordedWithoutAlert() {
         AccessEvent event = station(SimulatedTurnstileGateway.always(UnlockResult.FAILED)).handleScan(phone.showQr(NOW));
 

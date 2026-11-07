@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.tmc.gate.access.AccessEvent;
 import com.tmc.gate.access.Direction;
 import com.tmc.gate.access.GateIdentity;
+import com.tmc.gate.access.UnlockStatus;
 import com.tmc.gate.alert.Alert;
 import com.tmc.gate.alert.AlertType;
 import com.tmc.gate.alert.Alerts;
@@ -26,6 +27,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 class SyncClientTest {
@@ -73,7 +75,7 @@ class SyncClientTest {
     private List<AccessEvent> appendEvents(int count) {
         List<AccessEvent> appended = new ArrayList<>();
         for (int i = 0; i < count; i++) {
-            AccessEvent event = AccessEvent.accepted(GATE, "E001", T0.plusMillis(sequence++));
+            AccessEvent event = AccessEvent.accepted(GATE, "E001", T0.plusMillis(sequence++)).withUnlockStatus(UnlockStatus.UNLOCKED);
             events.append(event);
             appended.add(event);
         }
@@ -122,6 +124,44 @@ class SyncClientTest {
 
         assertThat(intake.submissions().get(1)).containsExactlyElementsOf(added.stream().map(AccessEvent::id).toList());
         assertThat(central.storedEventCount()).isEqualTo(7);
+    }
+
+    @Test
+    void revocationsAreDownloadedEvenWhenCentralRefusesAnEvent() {
+        appendEvents(1);
+        EventIntake refusesEverything = batch -> Set.of();
+
+        client(refusesEverything, GateSettings.defaults()).syncOnce();
+
+        assertThat(referenceData.current().revokedEmployeeIds()).containsExactly("E009");
+        assertThat(events.pendingCount()).isEqualTo(1);
+    }
+
+    @Test
+    @Timeout(value = 5, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void acknowledgementsForUnknownEventsDoNotLoopForever() {
+        appendEvents(2);
+        EventIntake acknowledgesStrangers = batch -> Set.of(UUID.randomUUID());
+
+        SyncReport report = client(acknowledgesStrangers, GateSettings.defaults()).syncOnce();
+
+        assertThat(report.uploaded()).isZero();
+        assertThat(events.pendingCount()).isEqualTo(2);
+    }
+
+    @Test
+    void pendingEventsAlertIsReplacedNotAccumulated() {
+        GateSettings settings = new GateSettings(Duration.ofSeconds(30), Duration.ofSeconds(5), 2,
+                Duration.ofSeconds(1), 100, Duration.ofHours(4), 3);
+        central.goOffline();
+        SyncClient client = client(central, settings);
+        appendEvents(4);
+        client.syncOnce();
+        appendEvents(1);
+
+        client.syncOnce();
+
+        assertThat(alerts.active()).filteredOn(alert -> alert.type() == AlertType.PENDING_EVENTS_HIGH).hasSize(1);
     }
 
     @Test

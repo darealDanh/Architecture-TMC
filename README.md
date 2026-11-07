@@ -48,6 +48,12 @@ active alert: UNLOCK_UNKNOWN 759075d1-6308-4769-b09b-d122bccae123
 
 Rejected scans are stored and synced too, because the audit log needs every attempt (FR-AT-04). The turnstile that stops answering is retried twice with the same event ID before the gate records `UNLOCK_UNKNOWN` and raises an alert for the security guard.
 
+## Running scans and sync together
+
+On a kiosk, the Sync Client runs in the background while the gate keeps scanning. Each side opens its own `LocalDatabase` connection to the same SQLite file, as `Demo` does. SQLite in WAL mode lets them work side by side, and `busy_timeout` makes one writer wait briefly for the other instead of failing. Do not share one connection between threads: replacing reference data runs in a transaction, and a scan written on the same connection during that transaction would be rolled back with it.
+
+The outbox does not send an accepted event while its unlock result is still `PENDING`. It is sent once the turnstile result is known, or after a restart, when `StartupRecovery` marks it `UNLOCK_UNKNOWN`.
+
 ## Protecting `main` on GitHub
 
 After pushing the repository, make the CI check required so a pull request cannot be merged while the build or tests fail:

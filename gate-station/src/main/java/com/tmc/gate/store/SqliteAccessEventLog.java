@@ -74,9 +74,11 @@ public final class SqliteAccessEventLog implements AccessEventLog, Outbox, Inter
 
     @Override
     public List<AccessEvent> pending(int limit) {
-        String sql = "SELECT " + COLUMNS + " FROM access_events WHERE synced = 0 ORDER BY occurred_at, rowid LIMIT ?";
+        String sql = "SELECT " + COLUMNS + " FROM access_events WHERE synced = 0 AND unlock_status <> ?"
+                + " ORDER BY occurred_at, rowid LIMIT ?";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setInt(1, limit);
+            statement.setString(1, UnlockStatus.PENDING.name());
+            statement.setInt(2, limit);
             return readEvents(statement);
         } catch (SQLException e) {
             throw new LocalStoreException("Cannot read pending events", e);

@@ -9,6 +9,7 @@ import com.tmc.gate.config.ConfigReader;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -49,34 +50,54 @@ public final class SyncClient {
     }
 
     public SyncReport syncOnce() {
-        SyncReport exchange = exchangeWithCentral();
+        SyncReport upload = uploadPending();
+        boolean downloaded = downloadReferenceData();
         Instant now = clock.instant();
-        if (exchange.connected()) {
+        boolean reachedCentral = upload.connected() && downloaded;
+        if (reachedCentral) {
             lastSuccessfulSync = now;
         }
         checkOfflineDuration(now);
         checkPendingEvents(now);
-        boolean connected = exchange.connected() && reportStatus(now);
-        return new SyncReport(connected, exchange.uploaded());
+        boolean connected = reachedCentral && reportStatus(now);
+        return new SyncReport(connected, upload.uploaded());
     }
 
-    private SyncReport exchangeWithCentral() {
+    private SyncReport uploadPending() {
         int uploaded = 0;
         try {
             List<AccessEvent> batch = outbox.pending(config.syncBatchSize());
             while (!batch.isEmpty()) {
-                Set<UUID> acknowledged = intake.submit(batch);
+                Set<UUID> acknowledged = acknowledgedFromBatch(batch, intake.submit(batch));
                 if (acknowledged.isEmpty()) {
-                    return new SyncReport(false, uploaded);
+                    return new SyncReport(true, uploaded);
                 }
                 outbox.markSynced(acknowledged);
                 uploaded += acknowledged.size();
                 batch = outbox.pending(config.syncBatchSize());
             }
-            referenceData.replace(source.fetch());
             return new SyncReport(true, uploaded);
         } catch (IntakeUnavailableException e) {
             return new SyncReport(false, uploaded);
+        }
+    }
+
+    private static Set<UUID> acknowledgedFromBatch(List<AccessEvent> batch, Set<UUID> acknowledged) {
+        Set<UUID> inBatch = new HashSet<>();
+        for (AccessEvent event : batch) {
+            if (acknowledged.contains(event.id())) {
+                inBatch.add(event.id());
+            }
+        }
+        return inBatch;
+    }
+
+    private boolean downloadReferenceData() {
+        try {
+            referenceData.replace(source.fetch());
+            return true;
+        } catch (IntakeUnavailableException e) {
+            return false;
         }
     }
 
@@ -92,10 +113,9 @@ public final class SyncClient {
 
     private void checkPendingEvents(Instant now) {
         int pending = outbox.pendingCount();
+        alerts.resolve(AlertType.PENDING_EVENTS_HIGH);
         if (pending > config.pendingEventsAlertThreshold()) {
             alerts.raise(new Alert(AlertType.PENDING_EVENTS_HIGH, pending + " events waiting to sync", now));
-        } else {
-            alerts.resolve(AlertType.PENDING_EVENTS_HIGH);
         }
     }
 
