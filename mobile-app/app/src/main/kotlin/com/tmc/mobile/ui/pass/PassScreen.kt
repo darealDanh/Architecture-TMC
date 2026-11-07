@@ -57,7 +57,7 @@ fun PassScreen(state: PassUiState) {
                 ) {
                     if (state.payload != null) {
                         CountdownRing(progress = state.secondsLeft.toFloat() / state.totalSeconds) {
-                            QrImage(state.payload, size = 152.dp)
+                            QrImage(state.payload, size = 156.dp)
                         }
                         Text("Show this at the gate", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
                         Text(

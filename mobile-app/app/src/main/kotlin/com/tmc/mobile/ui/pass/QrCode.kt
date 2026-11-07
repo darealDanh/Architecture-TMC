@@ -38,8 +38,8 @@ fun QrImage(payload: String, size: Dp, modifier: Modifier = Modifier) {
 
 @Composable
 fun CountdownRing(progress: Float, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Box(modifier.size(212.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(212.dp).padding(3.dp)) {
+    Box(modifier.size(236.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(236.dp).padding(3.dp)) {
             val stroke = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round)
             drawArc(TmcColors.Track, startAngle = 0f, sweepAngle = 360f, useCenter = false, style = stroke)
             drawArc(TmcColors.Primary, startAngle = -90f, sweepAngle = 360f * progress, useCenter = false, style = stroke)
