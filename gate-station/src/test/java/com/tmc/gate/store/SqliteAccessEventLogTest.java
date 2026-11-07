@@ -1,0 +1,122 @@
+package com.tmc.gate.store;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.tmc.gate.access.AccessEvent;
+import com.tmc.gate.access.Direction;
+import com.tmc.gate.access.GateIdentity;
+import com.tmc.gate.access.RejectionReason;
+import com.tmc.gate.access.UnlockStatus;
+import java.nio.file.Path;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.time.Instant;
+import java.util.List;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class SqliteAccessEventLogTest {
+
+    private static final GateIdentity GATE = new GateIdentity("BD-GATE-01", "BINH_DUONG", Direction.ENTRY);
+    private static final Instant T0 = Instant.parse("2026-11-07T07:00:00Z");
+
+    @TempDir
+    Path dir;
+
+    private LocalDatabase database;
+    private SqliteAccessEventLog log;
+
+    @BeforeEach
+    void open() {
+        database = LocalDatabase.open(dir.resolve("gate.db"));
+        log = new SqliteAccessEventLog(database);
+    }
+
+    @AfterEach
+    void close() {
+        database.close();
+    }
+
+    @Test
+    void appendedEventSurvivesReopen() {
+        AccessEvent event = AccessEvent.accepted(GATE, "E001", T0);
+        log.append(event);
+        database.close();
+
+        database = LocalDatabase.open(dir.resolve("gate.db"));
+        log = new SqliteAccessEventLog(database);
+
+        assertThat(log.find(event.id())).contains(event);
+    }
+
+    @Test
+    void storesRejectedEventWithoutEmployee() {
+        AccessEvent event = AccessEvent.rejected(GATE, null, RejectionReason.MALFORMED, T0);
+        log.append(event);
+
+        assertThat(log.find(event.id())).contains(event);
+    }
+
+    @Test
+    void updatesUnlockStatus() {
+        AccessEvent event = AccessEvent.accepted(GATE, "E001", T0);
+        log.append(event);
+
+        log.updateUnlockStatus(event.id(), UnlockStatus.UNLOCKED);
+
+        assertThat(log.find(event.id())).contains(event.withUnlockStatus(UnlockStatus.UNLOCKED));
+    }
+
+    @Test
+    void pendingReturnsUnsyncedEventsOldestFirstUpToLimit() {
+        AccessEvent third = AccessEvent.accepted(GATE, "E003", T0.plusSeconds(2));
+        AccessEvent first = AccessEvent.accepted(GATE, "E001", T0);
+        AccessEvent second = AccessEvent.accepted(GATE, "E002", T0.plusSeconds(1));
+        log.append(third);
+        log.append(first);
+        log.append(second);
+
+        assertThat(log.pending(2)).containsExactly(first, second);
+    }
+
+    @Test
+    void markSyncedRemovesEventsFromOutbox() {
+        AccessEvent first = AccessEvent.accepted(GATE, "E001", T0);
+        AccessEvent second = AccessEvent.accepted(GATE, "E002", T0.plusSeconds(1));
+        AccessEvent third = AccessEvent.accepted(GATE, "E003", T0.plusSeconds(2));
+        log.append(first);
+        log.append(second);
+        log.append(third);
+        assertThat(log.pendingCount()).isEqualTo(3);
+
+        log.markSynced(List.of(first.id(), second.id()));
+
+        assertThat(log.pendingCount()).isEqualTo(1);
+        assertThat(log.pending(10)).containsExactly(third);
+    }
+
+    @Test
+    void resolveAsUnknownTurnsPendingUnlocksIntoUnknown() {
+        AccessEvent interrupted = AccessEvent.accepted(GATE, "E001", T0);
+        AccessEvent completed = AccessEvent.accepted(GATE, "E002", T0.plusSeconds(1));
+        log.append(interrupted);
+        log.append(completed);
+        log.updateUnlockStatus(completed.id(), UnlockStatus.UNLOCKED);
+
+        assertThat(log.resolveAsUnknown()).containsExactly(interrupted.id());
+        assertThat(log.find(interrupted.id())).map(AccessEvent::unlockStatus).contains(UnlockStatus.UNLOCK_UNKNOWN);
+        assertThat(log.find(completed.id())).map(AccessEvent::unlockStatus).contains(UnlockStatus.UNLOCKED);
+    }
+
+    @Test
+    void walModeIsEnabled() throws SQLException {
+        try (Statement statement = database.connection().createStatement();
+                ResultSet result = statement.executeQuery("PRAGMA journal_mode")) {
+            result.next();
+            assertThat(result.getString(1)).isEqualTo("wal");
+        }
+    }
+}
