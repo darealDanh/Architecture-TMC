@@ -1,4 +1,4 @@
-package com.tmc.gate.store;
+package com.tmc.gate.sync;
 
 import com.tmc.gate.access.AccessEvent;
 import java.util.Collection;

@@ -1,10 +1,13 @@
 package com.tmc.gate.store;
 
 import com.tmc.gate.access.AccessEvent;
+import com.tmc.gate.access.AccessEventLog;
 import com.tmc.gate.access.AccessResult;
 import com.tmc.gate.access.Direction;
+import com.tmc.gate.access.InterruptedUnlocks;
 import com.tmc.gate.access.RejectionReason;
 import com.tmc.gate.access.UnlockStatus;
+import com.tmc.gate.sync.Outbox;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;

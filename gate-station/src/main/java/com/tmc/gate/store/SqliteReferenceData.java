@@ -1,6 +1,8 @@
 package com.tmc.gate.store;
 
+import com.tmc.gate.access.ReferenceDataReader;
 import com.tmc.gate.credential.Ed25519;
+import com.tmc.gate.sync.ReferenceDataWriter;
 import com.tmc.gate.validation.ReferenceData;
 import java.security.PublicKey;
 import java.sql.Connection;

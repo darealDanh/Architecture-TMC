@@ -1,7 +1,5 @@
-package com.tmc.gate.store;
+package com.tmc.gate.access;
 
-import com.tmc.gate.access.AccessEvent;
-import com.tmc.gate.access.UnlockStatus;
 import java.util.Optional;
 import java.util.UUID;
 
