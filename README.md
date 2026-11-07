@@ -30,6 +30,24 @@ mvnw.cmd verify      # Windows
 java -jar gate-station/target/gate-station-0.1.0.jar
 ```
 
+The demo runs one gate at Binh Duong against a simulated turnstile and an in-memory central system. It stores events in `gate-station-demo.db` in the current directory.
+
+```
+Initial sync                   ONLINE    uploaded 0
+E001 shows a fresh code        ACCEPTED  UNLOCKED
+Same code scanned again        REJECTED  REPLAYED
+E001 code from 40 s ago        REJECTED  QR_EXPIRED
+E002 (revoked) shows a code    REJECTED  REVOKED
+Turnstile stops answering      ACCEPTED  UNLOCK_UNKNOWN
+Sync while WAN is down         OFFLINE   uploaded 0
+E001 scans while offline       ACCEPTED  UNLOCKED
+Sync after WAN returns         ONLINE    uploaded 6
+central stored 6 events, 0 still pending at the gate
+active alert: UNLOCK_UNKNOWN 759075d1-6308-4769-b09b-d122bccae123
+```
+
+Rejected scans are stored and synced too, because the audit log needs every attempt (FR-AT-04). The turnstile that stops answering is retried twice with the same event ID before the gate records `UNLOCK_UNKNOWN` and raises an alert for the security guard.
+
 ## Protecting `main` on GitHub
 
 After pushing the repository, make the CI check required so a pull request cannot be merged while the build or tests fail:
