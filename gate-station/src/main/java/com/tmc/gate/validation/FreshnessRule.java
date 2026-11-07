@@ -1,6 +1,5 @@
 package com.tmc.gate.validation;
 
-import com.tmc.gate.access.RejectionReason;
 import com.tmc.gate.config.ConfigReader;
 import com.tmc.gate.credential.ScannedCredential;
 import java.time.Instant;

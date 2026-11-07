@@ -10,6 +10,7 @@ import com.tmc.gate.turnstile.TurnstileGateway;
 import com.tmc.gate.turnstile.UnlockResult;
 import com.tmc.gate.validation.NonceRegistry;
 import com.tmc.gate.validation.QrValidator;
+import com.tmc.gate.validation.RejectionReason;
 import com.tmc.gate.validation.ValidationContext;
 import java.time.Clock;
 import java.time.Instant;
@@ -58,7 +59,7 @@ public final class GateStation {
         }
         String employeeId = credential.certificate().employeeId();
         Optional<RejectionReason> violation =
-                validator.firstViolation(credential, new ValidationContext(referenceData.current(), gate, now));
+                validator.firstViolation(credential, new ValidationContext(referenceData.current(), gate.factoryId(), now));
         if (violation.isPresent()) {
             return record(AccessEvent.rejected(gate, employeeId, violation.get(), now));
         }

@@ -3,7 +3,6 @@ package com.tmc.gate.validation;
 import static com.tmc.gate.validation.ValidationFixture.NOW;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.tmc.gate.access.RejectionReason;
 import com.tmc.gate.config.GateSettings;
 import com.tmc.gate.credential.ScannedCredential;
 import com.tmc.gate.demo.Phone;

@@ -17,6 +17,7 @@ import com.tmc.gate.turnstile.TurnstileGateway;
 import com.tmc.gate.turnstile.UnlockResult;
 import com.tmc.gate.validation.QrValidator;
 import com.tmc.gate.validation.ReferenceData;
+import com.tmc.gate.validation.RejectionReason;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;

@@ -1,4 +1,4 @@
-package com.tmc.gate.access;
+package com.tmc.gate.validation;
 
 public enum RejectionReason {
     MALFORMED,

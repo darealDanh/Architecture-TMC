@@ -1,6 +1,5 @@
 package com.tmc.gate.validation;
 
-import com.tmc.gate.access.RejectionReason;
 import com.tmc.gate.credential.DeviceCertificate;
 import com.tmc.gate.credential.ScannedCredential;
 import java.util.Optional;

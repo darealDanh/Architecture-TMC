@@ -1,7 +1,5 @@
 package com.tmc.gate.validation;
 
-import com.tmc.gate.access.Direction;
-import com.tmc.gate.access.GateIdentity;
 import com.tmc.gate.credential.CredentialCodec;
 import com.tmc.gate.credential.ScannedCredential;
 import com.tmc.gate.demo.Phone;
@@ -14,7 +12,7 @@ import java.util.Set;
 final class ValidationFixture {
 
     static final Instant NOW = Instant.parse("2026-11-07T07:00:00Z");
-    static final GateIdentity GATE = new GateIdentity("BD-GATE-01", "BINH_DUONG", Direction.ENTRY);
+    static final String FACTORY = "BINH_DUONG";
 
     final ServerAuthority authority = new ServerAuthority();
     final Phone phone = new Phone("E001", authority, NOW.plusSeconds(3600));
@@ -33,7 +31,7 @@ final class ValidationFixture {
     }
 
     ValidationContext context(ReferenceData referenceData) {
-        return new ValidationContext(referenceData, GATE, NOW);
+        return new ValidationContext(referenceData, FACTORY, NOW);
     }
 
     ValidationContext context() {

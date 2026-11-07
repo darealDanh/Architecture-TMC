@@ -1,5 +1,6 @@
 package com.tmc.gate.access;
 
+import com.tmc.gate.validation.RejectionReason;
 import java.time.Instant;
 import java.util.UUID;
 
