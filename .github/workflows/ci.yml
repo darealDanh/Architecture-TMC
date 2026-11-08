@@ -6,25 +6,6 @@ on:
     branches: [main]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: gate-station
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: maven
-      - run: ./mvnw -B verify
-      - if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: gate-station
-          path: gate-station/target/gate-station-*.jar
-
   android:
     runs-on: ubuntu-latest
     defaults:

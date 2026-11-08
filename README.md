@@ -14,10 +14,9 @@ The server is a fake that runs inside the app. The code is structured to show th
 | Path | Contents |
 |---|---|
 | `mobile-app/` | Android app, a Gradle build with five modules |
-| `gate-station/` | Earlier Java module for the gate side (see below) |
 | `docs/solid.md` | How the app applies the SOLID principles |
 | `docs/reflection.md` | Team reflection |
-| `.github/workflows/ci.yml` | Builds and tests both modules on every pull request and push to `main` |
+| `.github/workflows/ci.yml` | Builds and tests the app on every pull request and push to `main` |
 
 ## Running the app
 
@@ -49,21 +48,6 @@ cd mobile-app
 
 Use `gradlew.bat` instead of `./gradlew` in Windows PowerShell or cmd. The instrumented tests check the real Android Keystore against the same contract as the in-memory test key store, and check that network detection follows airplane mode.
 
-## Gate Station module
-
-`gate-station/` is a Java 17 Maven project we built first. It covers the gate side of the design:
-- offline QR validation
-- writing each access event before unlocking the turnstile
-- syncing events to central without loss or duplicates
-
-```
-cd gate-station
-./mvnw verify
-java -jar target/gate-station-0.1.0.jar
-```
-
-It accepts the gate's original `v1` QR format, not the app's `v2`. The reason is explained in `docs/solid.md`.
-
 ## Protecting `main` on GitHub
 
 After pushing the repository, make the CI checks required so a pull request cannot be merged while a build or test fails:
@@ -71,4 +55,4 @@ After pushing the repository, make the CI checks required so a pull request cann
 1. Settings → Branches → Add branch protection rule.
 2. Branch name pattern: `main`.
 3. Enable "Require a pull request before merging" and "Require status checks to pass before merging".
-4. Select the `build` and `android` checks and save.
+4. Select the `android` check and save.
