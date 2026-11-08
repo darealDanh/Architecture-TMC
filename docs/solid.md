@@ -10,8 +10,6 @@ The app does what the M2 design asks of the phone:
 
 The server is a fake that runs inside the app. Every class named below exists in `mobile-app/`. The excerpts are copied from the code, shortened only where marked with `...`.
 
-The repository also contains `gate-station/`, an earlier Java module for the gate side. This document is about the app.
-
 ## Modules
 
 | Module | Kind | Contents |
@@ -210,7 +208,7 @@ class LocalStorage(context: Context) {
 
 ## Where we bend the rules
 
-- The gate does not accept the app's codes yet. The app signs with ECDSA P-256 in a `v2` format, because the Android Keystore supports P-256 on every phone the app targets (Android 8 and later), while Keystore support for the Ed25519 keys our gate module expects arrived only in recent Android versions. The format keeps the same structure and uses standard encodings (X.509 public keys, DER signatures). Even so, accepting `v2` at the gate is not a one-class change. The gate assumes Ed25519 in four places: the codec, which rejects anything but `v1`, the certificate signature rule, the device signature rule, and the stored server key. Each would need a P-256 variant, so the gate is not closed to this change the way the attendance rules are.
+- The app's QR format differs from the M2 design. M2 specifies Ed25519 signatures. The app signs with ECDSA P-256 in a `v2` format, because the Android Keystore supports P-256 on every phone the app targets (Android 8 and later), while Keystore support for Ed25519 arrived only in recent Android versions. The format keeps the same structure and uses standard encodings (X.509 public keys, DER signatures). A gate built to the M2 design would still reject these codes. Its codec, both signature checks and the stored server key all assume Ed25519, so the gate side is not closed to this change the way the attendance rules are.
 - `FakeTmcServer` implements three interfaces. The real server would too. The split matters on the client side, where each use case receives only the one it needs.
 - `DeviceKeyStoreContract` is a plain class of check functions, not an abstract test class. Domain tests use JUnit 6 and Android instrumented tests use JUnit 4, so a shared abstract test class would only work for one of them. Each test class calls the contract's functions itself.
 - `AndroidKeystoreDeviceKeyStore` and `AndroidKeystorePayloadSigner` must use the same key alias. They are separate classes for Interface Segregation, but they share a key. Nothing but the shared default value keeps them in step.
