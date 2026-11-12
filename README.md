@@ -56,3 +56,8 @@ After pushing the repository, make the CI checks required so a pull request cann
 2. Branch name pattern: `main`.
 3. Enable "Require a pull request before merging" and "Require status checks to pass before merging".
 4. Select the `android` check and save.
+
+## Contributing
+
+See `CONTRIBUTING.md` for the branch, check and merge rules.
+
