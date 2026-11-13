@@ -57,7 +57,7 @@ def code(s):
 def source(s):
  p=D.add_paragraph('Source: '+s);p.paragraph_format.space_after=Pt(6)
  for r in p.runs:r.font.size=Pt(8);r.italic=True
-def page():D.add_page_break()
+def new_page_heading(t):D.add_heading(t,1).paragraph_format.page_break_before=True
 heading('Applying SOLID in the TMC mobile app')
 D.add_paragraph('TMC Mobile App • Implementation and design rationale','Subtitle')
 para('The TMC Android app allows employees to enroll a device, display a signed QR access pass, and view attendance records offline. A device certificate binds the employee to the device public key. Each pass includes a timestamp and a fresh random value, called a nonce, and is signed with the device private key. This report explains how the application applies the five SOLID principles, which Section 6.2 of the architecture document sets as design guidelines and CO-3 makes a constraint. Each principle below names the classes that apply it and the requirement or decision it serves.')
@@ -73,7 +73,7 @@ c.line([(980,300),(980,140),(1260,140)],'runtime',label='HTTPS (planned)',at=(98
 c.line([(980,493),(980,710),(1260,710)],'runtime',label='QR presentation',at=(985,655),color=TEAL)
 fig(c.save('00-context'),'Figure 1. System context. Arrows identify the employee interaction and intended communication channels. The mobile app is implemented; production server integration and gate validation are planned. QR presentation is an optical interaction, not a network call.')
 para('Employees use the app to obtain a device certificate and present a signed pass at a gate. The certificate allows subsequent pass generation without a network connection. The planned central server handles authentication, certificate issuance, and attendance retrieval. Gate validation is external to the mobile app and is outside the implemented scope.')
-page();heading('Mobile app architecture')
+new_page_heading('Mobile app architecture')
 
 c=Canvas(710)
 c.box(610,20,570,'Application','Compose / ViewModels / Hilt',kind='«module»')
@@ -146,7 +146,7 @@ code('operator fun invoke(certificate: DeviceCertificate): Pass {\n    val issue
 D.add_paragraph('Listing 1. Pass construction in GeneratePass.', 'Caption')
 sub('Responsibility allocation','GeneratePass constructs one signed pass and sets its refreshAt time, 15 seconds after issue by default. ObservePassState checks the certificate once a second and asks GeneratePass for a new pass when refreshAt has passed or the certificate has changed. PassPayloadCodec defines the encoded format, and Compose handles presentation. GeneratePass receives Clock, NonceSource and PayloadSigner through its constructor, so tests control time, nonce values and signing.')
 sub('Enrollment and start-up','Signing in and renewing a certificate both enroll the device: get the device key, request a certificate, store it. EnrollDevice holds these steps once, and SignInAndEnroll and RenewCertificate both call it, so a change to enrollment touches one class. The check that decides whether the app opens on the pass screen or the sign-in screen is the use case IsDeviceEnrolled; StartViewModel only maps its result to a destination. PassViewModel gets the employee through GetSignedInEmployee instead of reading the session store.')
-page();heading('O: Open/Closed')
+new_page_heading('O: Open/Closed')
 para('The Open/Closed Principle calls for extending behavior without modifying existing logic. Section 6.2 states that a new rule is a new class implementing a common interface, and NFR-09 requires new rules to be added with limited change. AttendanceSummarizer applies a list of AttendanceRule objects to each record. Adding an HR rule requires a new rule implementation and registration in that list; the summary algorithm stays unchanged.')
 c=Canvas(660)
 c.box(25,40,700,'AttendanceSummarizer','- rules: List<AttendanceRule>\n+ summarize(...): MonthlyAttendance')
@@ -163,7 +163,7 @@ sub('Adding an attendance rule','A late-arrival rule can implement flags(record)
 sub('Rule registration','AttendanceSummarizer does not choose its rules. DomainModule, the app composition root, provides the rule list and passes it to the summarizer. Adding a default rule means writing the rule class and adding it to this list; AttendanceSummarizer and the existing rules stay unchanged.')
 code('@Provides\nfun attendanceRules(): List<AttendanceRule> =\n    listOf(MissingExitRule(), ManualEntryRule())')
 D.add_paragraph('Listing 3. Rule registration in DomainModule.', 'Caption')
-page();heading('L: Liskov substitution')
+new_page_heading('L: Liskov substitution')
 para('Replacing an implementation must preserve the behavior its caller relies on. Section 6.2 asks that a simulated adapter behave like the real one from the caller\'s point of view. GeneratePass accepts any PayloadSigner that produces the expected signature and follows the same error contract. AndroidKeystorePayloadSigner provides device signing, while InMemoryDeviceKeyStore supplies signing for unit tests. Shared checks verify their required behavior.')
 c=Canvas(650)
 c.box(25,30,650,'GeneratePass','+ invoke(certificate): Pass')
@@ -179,7 +179,7 @@ D.add_paragraph('Listing 4. Shared signing contract test.', 'Caption')
 sub('Hypothetical violation and correction','Consider a test signer that returns empty bytes or throws an unrelated exception when no key exists. Its method signature matches PayloadSigner, but its behavior breaks the signing contract. The correction is to return a verifiable signature and throw DeviceKeyMissingException when the key is absent. InMemoryDeviceKeyStore follows these requirements. The shared contract also checks key creation, reuse, and deletion.')
 para('The same contract checks are applied to the in-memory implementation and the Android implementation. Android checks require an emulator or device. The signing test above creates a key, signs known data, and verifies the signature using the corresponding public key. Hardware backing may differ without changing this signing contract.')
 para('The server ports follow the same pattern. ServerApiContract runs against StubServer, the test double used by the domain tests, and against FakeTmcServer, which the app uses. Both must reject wrong passwords and forged tokens, fail with ServerUnreachableException when offline, and issue certificates that verify with the server key. The planned ServerApiClient must pass the same contract before it replaces the fake.')
-page();heading('I: Interface segregation')
+new_page_heading('I: Interface segregation')
 para('Clients should depend only on the operations they use (Section 6.2). TMC defines AuthApi for sign-in, EnrollmentApi for certificate issuance, and AttendanceApi for attendance retrieval. SignInAndEnroll needs only AuthApi from the server, EnrollDevice needs only EnrollmentApi, and OfflineFirstAttendanceRepository needs only AttendanceApi.')
 c=Canvas(910)
 c.text(25,5,'HYPOTHETICAL VIOLATION: one broad dependency',27,RED)
@@ -199,7 +199,7 @@ fig(c.save('05-isp'),'Figure 7. ISP before/after comparison. The broad ServerApi
 code('interface EnrollmentApi {\n    suspend fun issueCertificate(\n        token: String, devicePublicKey: ByteArray): DeviceCertificate\n}')
 D.add_paragraph('Listing 5. Certificate issuance contract.', 'Caption')
 para('FakeTmcServer implements all three interfaces, and ServerModule provides the one instance three times, once as each interface. Each client keeps its narrow dependency. The planned ServerApiClient will do the same. GeneratePass follows the same approach: PayloadSigner exposes signing without exposing key creation or deletion, which stay on DeviceKeyStore.')
-page();heading('D: Dependency inversion')
+new_page_heading('D: Dependency inversion')
 para('Business logic should depend on interfaces whose implementations supply the platform details (Section 6.2). AD-08 requires that external systems are reached only through adapters and that other code depends on interfaces defined by TMC. GeneratePass depends on PayloadSigner, an interface owned by the domain. AndroidKeystorePayloadSigner implements that interface in the security module. Its source dependency therefore points toward the domain, although calls at runtime reach the security implementation.')
 c=Canvas(860)
 c.text(25,5,'HYPOTHETICAL VIOLATION: domain names a platform detail',27,RED)
@@ -218,7 +218,7 @@ code('// SecurityModule: app composition root\n@Provides\n@Singleton\nfun payloa
 D.add_paragraph('Listing 6. Provider method for the signing adapter.', 'Caption')
 para('GeneratePass receives PayloadSigner through its constructor. SecurityModule provides AndroidKeystorePayloadSigner, and DomainModule passes it to the use case. This keeps Android dependencies outside the pure Kotlin domain. Dependency injection supplies the instance; dependency inversion keeps the contract in the domain and makes the adapter depend on it.')
 para('Hilt provider functions create the concrete adapters in the app composition root, where application dependencies are assembled. Business classes receive the interfaces they need through their constructors.')
-page();heading('Testing and limitations')
+new_page_heading('Testing and limitations')
 t=D.add_table(rows=1,cols=4);t.style='Light Shading Accent 1'
 for c,s in zip(t.rows[0].cells,['Principle','Implementation evidence','Change isolated','Serves']):c.text=s
 for row in [('SRP','GeneratePass, ObservePassState, PassPayloadCodec; EnrollDevice, IsDeviceEnrolled','Pass building, polling, serialization; enrollment steps','6.2, FR-UQ-05, AD-05'),('OCP','AttendanceRule; rule list in DomainModule','Adding attendance flags','6.2, NFR-09'),('LSP','DeviceKeyStoreContract, ServerApiContract','Replacing key stores and servers','6.2'),('ISP','AuthApi, EnrollmentApi, AttendanceApi; PayloadSigner','Changing capabilities a client does not use','6.2'),('DIP','Domain-owned ports; plain Kotlin domain module; Hilt composition root','Changing platform and server adapters','6.2, AD-08')]:
