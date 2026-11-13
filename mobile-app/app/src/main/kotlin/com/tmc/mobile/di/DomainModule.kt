@@ -1,8 +1,12 @@
 package com.tmc.mobile.di
 
 import com.tmc.mobile.domain.attendance.AttendanceRepository
+import com.tmc.mobile.domain.attendance.AttendanceRule
 import com.tmc.mobile.domain.attendance.AttendanceSummarizer
 import com.tmc.mobile.domain.attendance.GetMonthlyAttendance
+import com.tmc.mobile.domain.attendance.ManualEntryRule
+import com.tmc.mobile.domain.attendance.MissingExitRule
+import com.tmc.mobile.domain.device.EnrollDevice
 import com.tmc.mobile.domain.device.GetDeviceStatus
 import com.tmc.mobile.domain.device.RenewCertificate
 import com.tmc.mobile.domain.pass.GeneratePass
@@ -16,6 +20,8 @@ import com.tmc.mobile.domain.port.EnrollmentApi
 import com.tmc.mobile.domain.port.NonceSource
 import com.tmc.mobile.domain.port.PayloadSigner
 import com.tmc.mobile.domain.port.SessionStore
+import com.tmc.mobile.domain.session.GetSignedInEmployee
+import com.tmc.mobile.domain.session.IsDeviceEnrolled
 import com.tmc.mobile.domain.session.SignInAndEnroll
 import com.tmc.mobile.domain.session.SignOut
 import dagger.Module
@@ -38,13 +44,22 @@ object DomainModule {
     fun nonceSource(): NonceSource = SecureRandomNonceSource()
 
     @Provides
-    fun signInAndEnroll(
-        auth: AuthApi,
-        enrollment: EnrollmentApi,
-        keyStore: DeviceKeyStore,
-        sessions: SessionStore,
-        certificates: CertificateStore,
-    ) = SignInAndEnroll(auth, enrollment, keyStore, sessions, certificates)
+    fun attendanceRules(): List<AttendanceRule> = listOf(MissingExitRule(), ManualEntryRule())
+
+    @Provides
+    fun enrollDevice(enrollment: EnrollmentApi, keyStore: DeviceKeyStore, certificates: CertificateStore) =
+        EnrollDevice(enrollment, keyStore, certificates)
+
+    @Provides
+    fun signInAndEnroll(auth: AuthApi, enrollDevice: EnrollDevice, sessions: SessionStore) =
+        SignInAndEnroll(auth, enrollDevice, sessions)
+
+    @Provides
+    fun isDeviceEnrolled(sessions: SessionStore, certificates: CertificateStore, keyStore: DeviceKeyStore) =
+        IsDeviceEnrolled(sessions, certificates, keyStore)
+
+    @Provides
+    fun getSignedInEmployee(sessions: SessionStore) = GetSignedInEmployee(sessions)
 
     @Provides
     fun signOut(
@@ -63,18 +78,17 @@ object DomainModule {
     ) = ObservePassState(certificates, GeneratePass(signer, nonces, clock), clock)
 
     @Provides
-    fun getMonthlyAttendance(sessions: SessionStore, repository: AttendanceRepository) =
-        GetMonthlyAttendance(sessions, repository, AttendanceSummarizer.standard())
+    fun getMonthlyAttendance(
+        sessions: SessionStore,
+        repository: AttendanceRepository,
+        rules: List<@JvmSuppressWildcards AttendanceRule>,
+    ) =
+        GetMonthlyAttendance(sessions, repository, AttendanceSummarizer(rules))
 
     @Provides
     fun getDeviceStatus(keyStore: DeviceKeyStore, certificates: CertificateStore, clock: Clock) =
         GetDeviceStatus(keyStore, certificates, clock)
 
     @Provides
-    fun renewCertificate(
-        sessions: SessionStore,
-        enrollment: EnrollmentApi,
-        keyStore: DeviceKeyStore,
-        certificates: CertificateStore,
-    ) = RenewCertificate(sessions, enrollment, keyStore, certificates)
+    fun renewCertificate(sessions: SessionStore, enrollDevice: EnrollDevice) = RenewCertificate(sessions, enrollDevice)
 }

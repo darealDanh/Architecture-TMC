@@ -3,6 +3,7 @@
 package com.tmc.mobile.ui.pass
 
 import com.tmc.mobile.MainDispatcherRule
+import com.tmc.mobile.domain.device.EnrollDevice
 import com.tmc.mobile.domain.device.RenewCertificate
 import com.tmc.mobile.domain.fakes.InMemoryCertificateStore
 import com.tmc.mobile.domain.fakes.InMemoryDeviceKeyStore
@@ -14,6 +15,7 @@ import com.tmc.mobile.domain.fakes.StubServer
 import com.tmc.mobile.domain.pass.GeneratePass
 import com.tmc.mobile.domain.pass.ObservePassState
 import com.tmc.mobile.domain.pass.PassPayloadCodec
+import com.tmc.mobile.domain.session.GetSignedInEmployee
 import com.tmc.mobile.domain.session.SignInAndEnroll
 import java.time.Instant
 import kotlin.test.assertEquals
@@ -44,12 +46,12 @@ class PassViewModelTest {
     private val certificates = InMemoryCertificateStore()
 
     private suspend fun signIn() {
-        SignInAndEnroll(server, server, keyStore, sessions, certificates)("E001", "password")
+        SignInAndEnroll(server, EnrollDevice(server, keyStore, certificates), sessions)("E001", "password")
     }
 
     private fun TestScope.collecting(): PassViewModel {
         val observe = ObservePassState(certificates, GeneratePass(keyStore, SequenceNonceSource(), clock), clock)
-        val viewModel = PassViewModel(observe, network, sessions, RenewCertificate(sessions, server, keyStore, certificates))
+        val viewModel = PassViewModel(observe, network, GetSignedInEmployee(sessions), RenewCertificate(sessions, EnrollDevice(server, keyStore, certificates)))
         backgroundScope.launch { viewModel.state.collect {} }
         runCurrent()
         return viewModel

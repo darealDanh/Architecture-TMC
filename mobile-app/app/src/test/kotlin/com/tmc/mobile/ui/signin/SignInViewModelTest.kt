@@ -3,6 +3,7 @@
 package com.tmc.mobile.ui.signin
 
 import com.tmc.mobile.MainDispatcherRule
+import com.tmc.mobile.domain.device.EnrollDevice
 import com.tmc.mobile.domain.fakes.InMemoryCertificateStore
 import com.tmc.mobile.domain.fakes.InMemoryDeviceKeyStore
 import com.tmc.mobile.domain.fakes.InMemorySessionStore
@@ -31,7 +32,7 @@ class SignInViewModelTest {
     private val server = StubServer(MutableClock(Instant.parse("2026-11-07T07:00:00Z")), network)
     private val sessions = InMemorySessionStore()
     private val viewModel = SignInViewModel(
-        SignInAndEnroll(server, server, InMemoryDeviceKeyStore(), sessions, InMemoryCertificateStore()),
+        SignInAndEnroll(server, EnrollDevice(server, InMemoryDeviceKeyStore(), InMemoryCertificateStore()), sessions),
     )
 
     private fun enter(employeeId: String, password: String) {
@@ -100,7 +101,7 @@ class SignInViewModelTest {
             override fun createKey(): ByteArray = throw IllegalStateException("keystore unavailable")
         }
         val viewModel = SignInViewModel(
-            SignInAndEnroll(server, server, brokenKeyStore, sessions, InMemoryCertificateStore()),
+            SignInAndEnroll(server, EnrollDevice(server, brokenKeyStore, InMemoryCertificateStore()), sessions),
         )
         viewModel.onEmployeeIdChange("E001")
         viewModel.onPasswordChange("password")

@@ -3,11 +3,13 @@
 package com.tmc.mobile.ui.navigation
 
 import com.tmc.mobile.MainDispatcherRule
+import com.tmc.mobile.domain.device.EnrollDevice
 import com.tmc.mobile.domain.fakes.InMemoryCertificateStore
 import com.tmc.mobile.domain.fakes.InMemoryDeviceKeyStore
 import com.tmc.mobile.domain.fakes.InMemorySessionStore
 import com.tmc.mobile.domain.fakes.MutableClock
 import com.tmc.mobile.domain.fakes.StubServer
+import com.tmc.mobile.domain.session.IsDeviceEnrolled
 import com.tmc.mobile.domain.session.SignInAndEnroll
 import java.time.Instant
 import kotlin.test.assertEquals
@@ -29,14 +31,14 @@ class StartViewModelTest {
 
     private suspend fun signIn() {
         val server = StubServer(MutableClock(Instant.parse("2026-11-07T07:00:00Z")))
-        SignInAndEnroll(server, server, keyStore, sessions, certificates)("E001", "password")
+        SignInAndEnroll(server, EnrollDevice(server, keyStore, certificates), sessions)("E001", "password")
     }
 
     @Test
     fun startsAtMainWhenSessionCertificateAndKeyExist() = runTest {
         signIn()
 
-        val viewModel = StartViewModel(sessions, certificates, keyStore)
+        val viewModel = StartViewModel(IsDeviceEnrolled(sessions, certificates, keyStore))
         advanceUntilIdle()
 
         assertEquals(StartDestination.Main, viewModel.start.value)
@@ -47,7 +49,7 @@ class StartViewModelTest {
         signIn()
         keyStore.delete()
 
-        val viewModel = StartViewModel(sessions, certificates, keyStore)
+        val viewModel = StartViewModel(IsDeviceEnrolled(sessions, certificates, keyStore))
         advanceUntilIdle()
 
         assertEquals(StartDestination.SignIn, viewModel.start.value)
@@ -55,7 +57,7 @@ class StartViewModelTest {
 
     @Test
     fun startsAtSignInOtherwise() = runTest {
-        val viewModel = StartViewModel(sessions, certificates, keyStore)
+        val viewModel = StartViewModel(IsDeviceEnrolled(sessions, certificates, keyStore))
         advanceUntilIdle()
 
         assertEquals(StartDestination.SignIn, viewModel.start.value)

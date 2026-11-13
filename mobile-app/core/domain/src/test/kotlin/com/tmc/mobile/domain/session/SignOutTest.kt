@@ -2,6 +2,7 @@ package com.tmc.mobile.domain.session
 
 import com.tmc.mobile.domain.attendance.AttendanceRecord
 import com.tmc.mobile.domain.attendance.EntrySource
+import com.tmc.mobile.domain.device.EnrollDevice
 import com.tmc.mobile.domain.fakes.InMemoryAttendanceCache
 import com.tmc.mobile.domain.fakes.InMemoryCertificateStore
 import com.tmc.mobile.domain.fakes.InMemoryDeviceKeyStore
@@ -26,7 +27,7 @@ class SignOutTest {
     private val sessions = InMemorySessionStore()
     private val certificates = InMemoryCertificateStore()
     private val cache = InMemoryAttendanceCache()
-    private val signIn = SignInAndEnroll(server, server, keyStore, sessions, certificates)
+    private val signIn = SignInAndEnroll(server, EnrollDevice(server, keyStore, certificates), sessions)
     private val signOut = SignOut(keyStore, sessions, certificates, cache)
     private val month = YearMonth.of(2026, 11)
     private val record = AttendanceRecord(

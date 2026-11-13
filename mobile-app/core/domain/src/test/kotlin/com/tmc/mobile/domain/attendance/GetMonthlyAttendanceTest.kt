@@ -30,7 +30,7 @@ class GetMonthlyAttendanceTest {
 
     @Test
     fun loadsTheSignedInEmployeesMonth() = runTest {
-        val summary = GetMonthlyAttendance(InMemorySessionStore(session), repository, AttendanceSummarizer.standard())(month)
+        val summary = GetMonthlyAttendance(InMemorySessionStore(session), repository, AttendanceSummarizer(listOf(MissingExitRule(), ManualEntryRule())))(month)
 
         assertEquals(session to month, repository.requested)
         assertEquals(1, summary.daysWorked)
@@ -40,7 +40,7 @@ class GetMonthlyAttendanceTest {
     @Test
     fun withoutSessionFails() = runTest {
         assertThrows<SessionExpiredException> {
-            GetMonthlyAttendance(InMemorySessionStore(), repository, AttendanceSummarizer.standard())(month)
+            GetMonthlyAttendance(InMemorySessionStore(), repository, AttendanceSummarizer(listOf(MissingExitRule(), ManualEntryRule())))(month)
         }
     }
 }

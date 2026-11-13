@@ -3,6 +3,7 @@
 package com.tmc.mobile.ui.device
 
 import com.tmc.mobile.MainDispatcherRule
+import com.tmc.mobile.domain.device.EnrollDevice
 import com.tmc.mobile.domain.device.GetDeviceStatus
 import com.tmc.mobile.domain.device.RenewCertificate
 import com.tmc.mobile.domain.fakes.InMemoryAttendanceCache
@@ -42,10 +43,10 @@ class DeviceViewModelTest {
     private val certificates = InMemoryCertificateStore()
 
     private suspend fun TestScope.started(): DeviceViewModel {
-        SignInAndEnroll(server, server, keyStore, sessions, certificates)("E001", "password")
+        SignInAndEnroll(server, EnrollDevice(server, keyStore, certificates), sessions)("E001", "password")
         val viewModel = DeviceViewModel(
             GetDeviceStatus(keyStore, certificates, clock),
-            RenewCertificate(sessions, server, keyStore, certificates),
+            RenewCertificate(sessions, EnrollDevice(server, keyStore, certificates)),
             SignOut(keyStore, sessions, certificates, InMemoryAttendanceCache()),
         )
         advanceUntilIdle()
@@ -99,14 +100,14 @@ class DeviceViewModelTest {
 
     @Test
     fun unexpectedRenewFailureShowsGenericMessage() = runTest {
-        SignInAndEnroll(server, server, keyStore, sessions, certificates)("E001", "password")
+        SignInAndEnroll(server, EnrollDevice(server, keyStore, certificates), sessions)("E001", "password")
         val failingEnrollment = object : EnrollmentApi {
             override suspend fun issueCertificate(token: String, devicePublicKey: ByteArray): DeviceCertificate =
                 throw IllegalStateException("unexpected response")
         }
         val viewModel = DeviceViewModel(
             GetDeviceStatus(keyStore, certificates, clock),
-            RenewCertificate(sessions, failingEnrollment, keyStore, certificates),
+            RenewCertificate(sessions, EnrollDevice(failingEnrollment, keyStore, certificates)),
             SignOut(keyStore, sessions, certificates, InMemoryAttendanceCache()),
         )
         advanceUntilIdle()
