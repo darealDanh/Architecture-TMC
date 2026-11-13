@@ -60,7 +60,7 @@ def source(s):
 def new_page_heading(t):D.add_heading(t,1).paragraph_format.page_break_before=True
 heading('Applying SOLID in the TMC mobile app')
 D.add_paragraph('TMC Mobile App • Implementation and design rationale','Subtitle')
-para('The TMC Android app allows employees to enroll a device, display a signed QR access pass, and view attendance records offline. A device certificate binds the employee to the device public key. Each pass includes a timestamp and a fresh random value, called a nonce, and is signed with the device private key. This report explains how the application applies the five SOLID principles, which Section 6.2 of the architecture document sets as design guidelines and CO-3 makes a constraint. Each principle below names the classes that apply it and the requirement or decision it serves.')
+para('The TMC Android app allows employees to enroll a device, display a signed QR access pass, and view attendance records offline. A device certificate binds the employee to the device public key. Each pass includes a timestamp and a fresh random value, called a nonce, and is signed with the device private key. This report explains how the application applies the five SOLID principles. Each principle below names the classes that apply it and the requirement it serves.')
 sub('System structure','The application separates screen presentation, business logic, data storage, and device security. Jetpack Compose renders the screens, while ViewModels hold screen state. Room stores attendance records, DataStore stores session and certificate data, and Android Keystore manages the device key. Hilt assembles these dependencies. The domain contains the business rules and the interfaces required by them.')
 
 c=Canvas(850)
@@ -86,7 +86,7 @@ c.line([(610,80),(5,80),(5,550),(610,550)])
 c.box(1220,510,550,'TMC Central Server','Planned; not yet implemented',kind='«external system»')
 fig(c.save('01-modules'),'Figure 2. Gradle modules. Arrows show source dependencies; every adapter module depends on the domain and nothing depends on an adapter except the application. The fake server module stands in for TMC Central Server, which is not yet implemented.')
 para('The app runs against FakeTmcServer, an in-process server in the :fake-server module. It implements AuthApi, EnrollmentApi and AttendanceApi, signs certificates with a fixed server key, and fails with ServerUnreachableException when the phone is offline. TMC Central Server is the planned backend; a future HTTP adapter, ServerApiClient, will implement the same three interfaces and replace the fake by changing ServerModule only. Gate validation and turnstile control are outside the mobile-app scope.')
-para('The domain module uses the plain Kotlin JVM plugin, not the Android plugin. An Android import in the domain therefore fails to compile. The dependency rule of Section 6.2, that source dependencies point toward the business rules, is enforced by the build rather than by convention.')
+para('The domain module uses the plain Kotlin JVM plugin, not the Android plugin. An Android import in the domain therefore fails to compile. The rule that source dependencies point toward the business rules is enforced by the build rather than by convention.')
 sub('Diagram notation','Class boxes contain selected attributes and operations. The interface stereotype identifies a contract. Dashed arrows with open heads indicate dependencies; hollow triangles indicate interface realization and point toward the interface. Green arrows represent runtime communication. Each diagram includes only the members needed for its explanation.')
 
 from docx.enum.section import WD_SECTION_START, WD_ORIENT
@@ -130,7 +130,7 @@ portrait.orientation=WD_ORIENT.PORTRAIT
 portrait.page_width=Inches(8.27);portrait.page_height=Inches(11.69)
 heading('S: Single responsibility')
 
-para('A class should have one reason to change (Section 6.2). The QR feature serves FR-UQ-05, which requires time-limited codes that refresh automatically, and AD-05, which requires signed codes. Building and signing a pass, polling for a new one, encoding the payload and drawing the screen are separate classes, so a change to the QR format does not touch the timing code.')
+para('A class should have one reason to change. The QR pass must expire quickly and refresh automatically, so a copied code cannot be reused, and it must be signed, so a gate can verify it without contacting the server. Building and signing a pass, polling for a new one, encoding the payload and drawing the screen are separate classes, so a change to the QR format does not touch the timing code.')
 c=Canvas(830)
 c.box(30,30,670,'PassViewModel','Exposes screen state')
 c.box(1030,30,730,'ObservePassState','+ invoke(): Flow<PassState>')
@@ -147,7 +147,7 @@ D.add_paragraph('Listing 1. Pass construction in GeneratePass.', 'Caption')
 sub('Responsibility allocation','GeneratePass constructs one signed pass and sets its refreshAt time, 15 seconds after issue by default. ObservePassState checks the certificate once a second and asks GeneratePass for a new pass when refreshAt has passed or the certificate has changed. PassPayloadCodec defines the encoded format, and Compose handles presentation. GeneratePass receives Clock, NonceSource and PayloadSigner through its constructor, so tests control time, nonce values and signing.')
 sub('Enrollment and start-up','Signing in and renewing a certificate both enroll the device: get the device key, request a certificate, store it. EnrollDevice holds these steps once, and SignInAndEnroll and RenewCertificate both call it, so a change to enrollment touches one class. The check that decides whether the app opens on the pass screen or the sign-in screen is the use case IsDeviceEnrolled; StartViewModel only maps its result to a destination. PassViewModel gets the employee through GetSignedInEmployee instead of reading the session store.')
 new_page_heading('O: Open/Closed')
-para('The Open/Closed Principle calls for extending behavior without modifying existing logic. Section 6.2 states that a new rule is a new class implementing a common interface, and NFR-09 requires new rules to be added with limited change. AttendanceSummarizer applies a list of AttendanceRule objects to each record. Adding an HR rule requires a new rule implementation and registration in that list; the summary algorithm stays unchanged.')
+para('The Open/Closed Principle calls for extending behavior without modifying existing logic. New attendance rules should be added as new classes, with limited change to existing code. AttendanceSummarizer applies a list of AttendanceRule objects to each record. Adding an HR rule requires a new rule implementation and registration in that list; the summary algorithm stays unchanged.')
 c=Canvas(660)
 c.box(25,40,700,'AttendanceSummarizer','- rules: List<AttendanceRule>\n+ summarize(...): MonthlyAttendance')
 c.box(1030,40,730,'AttendanceRule','+ flags(record): List<DayFlag>',kind='«interface»')
@@ -164,7 +164,7 @@ sub('Rule registration','AttendanceSummarizer does not choose its rules. DomainM
 code('@Provides\nfun attendanceRules(): List<AttendanceRule> =\n    listOf(MissingExitRule(), ManualEntryRule())')
 D.add_paragraph('Listing 3. Rule registration in DomainModule.', 'Caption')
 new_page_heading('L: Liskov substitution')
-para('Replacing an implementation must preserve the behavior its caller relies on. Section 6.2 asks that a simulated adapter behave like the real one from the caller\'s point of view. GeneratePass accepts any PayloadSigner that produces the expected signature and follows the same error contract. AndroidKeystorePayloadSigner provides device signing, while InMemoryDeviceKeyStore supplies signing for unit tests. Shared checks verify their required behavior.')
+para('Replacing an implementation must preserve the behavior its caller relies on. A simulated adapter must behave like the real one from the caller\'s point of view. GeneratePass accepts any PayloadSigner that produces the expected signature and follows the same error contract. AndroidKeystorePayloadSigner provides device signing, while InMemoryDeviceKeyStore supplies signing for unit tests. Shared checks verify their required behavior.')
 c=Canvas(650)
 c.box(25,30,650,'GeneratePass','+ invoke(certificate): Pass')
 c.box(1020,30,740,'PayloadSigner','+ sign(data: ByteArray): ByteArray',kind='«interface»')
@@ -180,7 +180,7 @@ sub('Hypothetical violation and correction','Consider a test signer that returns
 para('The same contract checks are applied to the in-memory implementation and the Android implementation. Android checks require an emulator or device. The signing test above creates a key, signs known data, and verifies the signature using the corresponding public key. Hardware backing may differ without changing this signing contract.')
 para('The server ports follow the same pattern. ServerApiContract runs against StubServer, the test double used by the domain tests, and against FakeTmcServer, which the app uses. Both must reject wrong passwords and forged tokens, fail with ServerUnreachableException when offline, and issue certificates that verify with the server key. The planned ServerApiClient must pass the same contract before it replaces the fake.')
 new_page_heading('I: Interface segregation')
-para('Clients should depend only on the operations they use (Section 6.2). TMC defines AuthApi for sign-in, EnrollmentApi for certificate issuance, and AttendanceApi for attendance retrieval. SignInAndEnroll needs only AuthApi from the server, EnrollDevice needs only EnrollmentApi, and OfflineFirstAttendanceRepository needs only AttendanceApi.')
+para('Clients should depend only on the operations they use. TMC defines AuthApi for sign-in, EnrollmentApi for certificate issuance, and AttendanceApi for attendance retrieval. SignInAndEnroll needs only AuthApi from the server, EnrollDevice needs only EnrollmentApi, and OfflineFirstAttendanceRepository needs only AttendanceApi.')
 c=Canvas(910)
 c.text(25,5,'HYPOTHETICAL VIOLATION: one broad dependency',27,RED)
 c.box(25,65,650,'EnrollDevice','Needs certificate issuance only')
@@ -200,7 +200,7 @@ code('interface EnrollmentApi {\n    suspend fun issueCertificate(\n        toke
 D.add_paragraph('Listing 5. Certificate issuance contract.', 'Caption')
 para('FakeTmcServer implements all three interfaces, and ServerModule provides the one instance three times, once as each interface. Each client keeps its narrow dependency. The planned ServerApiClient will do the same. GeneratePass follows the same approach: PayloadSigner exposes signing without exposing key creation or deletion, which stay on DeviceKeyStore.')
 new_page_heading('D: Dependency inversion')
-para('Business logic should depend on interfaces whose implementations supply the platform details (Section 6.2). AD-08 requires that external systems are reached only through adapters and that other code depends on interfaces defined by TMC. GeneratePass depends on PayloadSigner, an interface owned by the domain. AndroidKeystorePayloadSigner implements that interface in the security module. Its source dependency therefore points toward the domain, although calls at runtime reach the security implementation.')
+para('Business logic should depend on interfaces whose implementations supply the platform details. External systems are reached only through adapters, and the rest of the code depends on interfaces the app defines. GeneratePass depends on PayloadSigner, an interface owned by the domain. AndroidKeystorePayloadSigner implements that interface in the security module. Its source dependency therefore points toward the domain, although calls at runtime reach the security implementation.')
 c=Canvas(860)
 c.text(25,5,'HYPOTHETICAL VIOLATION: domain names a platform detail',27,RED)
 c.box(25,55,650,'GeneratePass');c.box(1020,55,740,'AndroidKeystorePayloadSigner')
@@ -219,21 +219,20 @@ D.add_paragraph('Listing 6. Provider method for the signing adapter.', 'Caption'
 para('GeneratePass receives PayloadSigner through its constructor. SecurityModule provides AndroidKeystorePayloadSigner, and DomainModule passes it to the use case. This keeps Android dependencies outside the pure Kotlin domain. Dependency injection supplies the instance; dependency inversion keeps the contract in the domain and makes the adapter depend on it.')
 para('Hilt provider functions create the concrete adapters in the app composition root, where application dependencies are assembled. Business classes receive the interfaces they need through their constructors.')
 new_page_heading('Testing and limitations')
-t=D.add_table(rows=1,cols=4);t.style='Light Shading Accent 1'
-for c,s in zip(t.rows[0].cells,['Principle','Implementation evidence','Change isolated','Serves']):c.text=s
-for row in [('SRP','GeneratePass, ObservePassState, PassPayloadCodec; EnrollDevice, IsDeviceEnrolled','Pass building, polling, serialization; enrollment steps','6.2, FR-UQ-05, AD-05'),('OCP','AttendanceRule; rule list in DomainModule','Adding attendance flags','6.2, NFR-09'),('LSP','DeviceKeyStoreContract, ServerApiContract','Replacing key stores and servers','6.2'),('ISP','AuthApi, EnrollmentApi, AttendanceApi; PayloadSigner','Changing capabilities a client does not use','6.2'),('DIP','Domain-owned ports; plain Kotlin domain module; Hilt composition root','Changing platform and server adapters','6.2, AD-08')]:
+t=D.add_table(rows=1,cols=3);t.style='Light Shading Accent 1'
+for c,s in zip(t.rows[0].cells,['Principle','Implementation evidence','Change isolated']):c.text=s
+for row in [('SRP','GeneratePass, ObservePassState, PassPayloadCodec; EnrollDevice, IsDeviceEnrolled','Pass building, polling, serialization; enrollment steps'),('OCP','AttendanceRule; rule list in DomainModule','Adding attendance flags'),('LSP','DeviceKeyStoreContract, ServerApiContract','Replacing key stores and servers'),('ISP','AuthApi, EnrollmentApi, AttendanceApi; PayloadSigner','Changing capabilities a client does not use'),('DIP','Domain-owned ports; plain Kotlin domain module; Hilt composition root','Changing platform and server adapters')]:
  for cell,s in zip(t.add_row().cells,row):cell.text=s
-sub('Test coverage','Unit tests cover pass generation, attendance rules, cache fallback, use cases, screen state, and server contracts. Instrumented tests exercise Android Keystore and network detection on an emulator or device. GitHub Actions runs ./gradlew assembleDebug test on every pull request; the run for the change that introduced EnrollDevice and the composition-root rule list passed.')
+sub('Test coverage','Unit tests cover pass generation, attendance rules, cache fallback, use cases, screen state, and server contracts. Instrumented tests exercise Android Keystore and network detection on an emulator or device. The command ./gradlew assembleDebug test builds the app and runs all unit tests, and it passes on the current code.')
 para('For pass generation, tests control time and nonce values through injected dependencies. Attendance tests cover the addition of new rules and retrieval from the offline cache. Shared signing contracts check that implementations return verifiable signatures and report a missing key consistently.')
 sub('Implementation limitations','Production integration requires TMC Central Server and its HTTP adapter, including error mapping and contract validation. The app uses ECDSA P-256 signatures, so gate validation must support that format. The signing and key-store adapters must use the same key alias to access the same device key. Design issues that remain:')
 for item in [
  'AttendanceViewModel decides which months are available. This is a business rule in the presentation layer.',
- 'The pass refresh interval is a constant in GeneratePass, and PassViewModel reads it for the countdown ring. AD-13 requires QR validity to be configuration.',
+ 'The pass refresh interval is a constant in GeneratePass, and PassViewModel reads it for the countdown ring. The validity period should be configurable rather than fixed in code.',
  'DeviceCertificate knows its own signed encoding, so the entity changes when the wire format changes.',
  'PassPayloadCodec.decode and EcdsaP256.verify are used only by tests. Pass verification belongs to the gate station.',
- 'Session data and cached attendance are stored without encryption, which AD-11 requires for personal data at rest.',
+ 'Session data and cached attendance are stored without encryption, although it is personal data and should be encrypted at rest.',
 ]:D.add_paragraph(item,'List Bullet')
-para('These were found in a review after the main implementation. Three other issues from that review were fixed: enrollment written in two use cases, ViewModels reading stores directly, and rule registration inside AttendanceSummarizer.')
 sub('Conclusion','The application separates pass generation from refresh scheduling, supports additional attendance rules through AttendanceRule, and defines focused interfaces for signing and server access. Shared contracts check replacement behavior. Domain-owned interfaces keep the business logic independent of Android adapters and the planned server integration.')
 path=OUT/'TMC_SOLID_Report_With_Overview.docx';D.save(path)
 print(path)
