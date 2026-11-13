@@ -36,11 +36,13 @@ Each class has one reason to change. In the domain, every user action is one cla
 
 | Class | Changes when |
 |---|---|
-| `SignInAndEnroll` | The sign-in and first enrollment steps change |
+| `SignInAndEnroll` | The order of sign-in and enrollment changes |
+| `EnrollDevice` | The steps to get a device certificate change |
 | `GeneratePass` | The way one pass is built and signed changes |
 | `ObservePassState` | The refresh timing or expiry handling changes |
 | `GetMonthlyAttendance` | The way a month is assembled changes |
 | `RenewCertificate`, `GetDeviceStatus`, `SignOut` | Their single action changes |
+| `IsDeviceEnrolled`, `GetSignedInEmployee` | What counts as enrolled, or where the employee comes from, changes |
 
 `GeneratePass` builds one pass. It does not know about timers, storage or screens:
 
@@ -57,7 +59,16 @@ operator fun invoke(certificate: DeviceCertificate): Pass {
 }
 ```
 
-The QR format lives in `PassPayloadCodec`. The countdown lives in `ObservePassState`. Drawing the ring lives in `CountdownRing` in the UI. Changing the refresh interval touches one constant. Changing the payload format touches one object.
+The QR format lives in `PassPayloadCodec`. `GeneratePass` sets each pass's `refreshAt`, 15 seconds after issue. `ObservePassState` checks once a second and asks for a new pass when `refreshAt` has passed. Drawing the ring lives in `CountdownRing` in the UI. Changing the payload format touches one object.
+
+Sign-in and certificate renewal both enroll the device. `EnrollDevice` holds those steps once, and both use cases call it:
+
+```kotlin
+suspend operator fun invoke(token: String): DeviceCertificate =
+    enrollment.issueCertificate(token, keyStore.createKey()).also { certificates.save(it) }
+```
+
+The start screen follows the same rule. `StartViewModel` used to read three stores and decide itself whether the phone was enrolled. That decision is now the use case `IsDeviceEnrolled`, and the ViewModel only maps the answer to a destination. `PassViewModel` gets the employee from `GetSignedInEmployee` instead of reading `SessionStore`.
 
 ViewModels hold screen state and turn use case results into what the screen shows. `SignInViewModel` turns the outcome of `SignInAndEnroll` into what the screen shows, and the sign-in logic stays in the use case:
 
@@ -99,6 +110,15 @@ class MissingExitRule : AttendanceRule {
 ```
 
 Suppose HR later wants late arrivals flagged. That is a new class added to the list. The test `newRuleAddsFlagWithoutChangingExistingRules` in `AttendanceSummarizerTest` does exactly this with a "Late" rule, and neither `MissingExitRule` nor `ManualEntryRule` changes. The severity on each `DayFlag` decides whether it counts toward "To review". A new rule also chooses its own severity, so the screen needs no change either.
+
+`AttendanceSummarizer` does not pick its rules. The rule list lives in `DomainModule`, the composition root:
+
+```kotlin
+@Provides
+fun attendanceRules(): List<AttendanceRule> = listOf(MissingExitRule(), ManualEntryRule())
+```
+
+A new default rule is a new class plus one entry in this list. `AttendanceSummarizer` does not change.
 
 ## L: Liskov Substitution
 
@@ -155,13 +175,13 @@ interface AttendanceApi {
 }
 ```
 
-`RenewCertificate` sees only `EnrollmentApi`. `OfflineFirstAttendanceRepository` sees only `AttendanceApi`.
+`SignInAndEnroll` sees only `AuthApi`. `EnrollDevice` sees only `EnrollmentApi`. `OfflineFirstAttendanceRepository` sees only `AttendanceApi`.
 
 The device key is split the same way:
 - `DeviceKeyStore` creates, reads and deletes the key.
 - `PayloadSigner` has one method, `sign`.
 
-`GeneratePass` runs every 15 seconds and receives only a `PayloadSigner`, so pass generation cannot delete or replace the device key. Only `SignInAndEnroll`, `RenewCertificate`, `SignOut` and `GetDeviceStatus` get a `DeviceKeyStore`.
+`GeneratePass` runs every 15 seconds and receives only a `PayloadSigner`, so pass generation cannot delete or replace the device key. Only `EnrollDevice`, `IsDeviceEnrolled`, `SignOut` and `GetDeviceStatus` get a `DeviceKeyStore`.
 
 ## D: Dependency Inversion
 
@@ -214,4 +234,8 @@ class LocalStorage(context: Context) {
 - `AndroidKeystoreDeviceKeyStore` and `AndroidKeystorePayloadSigner` must use the same key alias. They are separate classes for Interface Segregation, but they share a key. Nothing but the shared default value keeps them in step.
 - Wiring the domain takes more code. The domain does not depend on Hilt, so its classes carry no `@Inject` annotations. `DomainModule` builds every use case by hand. This is the cost of keeping the domain free of frameworks.
 - `AttendanceViewModel` decides which months to offer (the current month and the two before it). That rule belongs in the domain, but it lives in the ViewModel.
+- The 15-second refresh interval is a constant in `GeneratePass`, and `PassViewModel` reads it for the countdown ring. AD-13 asks for QR validity to be configuration.
+- `DeviceCertificate` builds its own signed content, so the entity changes when the wire format changes.
+- `PassPayloadCodec.decode` and `EcdsaP256.verify` are used only by tests. Verifying a pass is the gate's job.
+- Session data and cached attendance are stored without encryption. AD-11 asks for personal data to be encrypted at rest.
 - ViewModels catch specific exceptions to choose a message. Each ViewModel ends with a catch-all, so an unexpected failure shows "Something went wrong" instead of crashing. Even so, a new failure type that deserves its own message still needs a new `catch`. A sealed result type would make that impossible to forget, at the cost of more types.

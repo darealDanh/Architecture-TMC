@@ -20,3 +20,4 @@ mobile-app/local.properties
 .idea/
 .kotlin/
 *.iml
+~$*
