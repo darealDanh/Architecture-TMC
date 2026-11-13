@@ -10,6 +10,9 @@ import com.tmc.mobile.domain.attendance.AttendanceRepository
 import com.tmc.mobile.domain.attendance.AttendanceSummarizer
 import com.tmc.mobile.domain.attendance.EntrySource
 import com.tmc.mobile.domain.attendance.GetMonthlyAttendance
+import com.tmc.mobile.domain.attendance.ManualEntryRule
+import com.tmc.mobile.domain.attendance.MissingExitRule
+import com.tmc.mobile.domain.device.EnrollDevice
 import com.tmc.mobile.domain.fakes.InMemoryAttendanceCache
 import com.tmc.mobile.domain.fakes.InMemoryCertificateStore
 import com.tmc.mobile.domain.fakes.InMemoryDeviceKeyStore
@@ -52,9 +55,9 @@ class AttendanceViewModelTest {
     }
 
     private suspend fun TestScope.started(): AttendanceViewModel {
-        SignInAndEnroll(server, server, InMemoryDeviceKeyStore(), sessions, InMemoryCertificateStore())("E001", "password")
+        SignInAndEnroll(server, EnrollDevice(server, InMemoryDeviceKeyStore(), InMemoryCertificateStore()), sessions)("E001", "password")
         val repository = OfflineFirstAttendanceRepository(server, InMemoryAttendanceCache(), network)
-        val viewModel = AttendanceViewModel(GetMonthlyAttendance(sessions, repository, AttendanceSummarizer.standard()), clock, network)
+        val viewModel = AttendanceViewModel(GetMonthlyAttendance(sessions, repository, AttendanceSummarizer(listOf(MissingExitRule(), ManualEntryRule()))), clock, network)
         advanceUntilIdle()
         return viewModel
     }
@@ -108,13 +111,13 @@ class AttendanceViewModelTest {
 
     @Test
     fun unexpectedFailureShowsAnError() = runTest {
-        SignInAndEnroll(server, server, InMemoryDeviceKeyStore(), sessions, InMemoryCertificateStore())("E001", "password")
+        SignInAndEnroll(server, EnrollDevice(server, InMemoryDeviceKeyStore(), InMemoryCertificateStore()), sessions)("E001", "password")
         val failing = object : AttendanceRepository {
             override suspend fun load(session: Session, month: YearMonth): AttendanceLoad =
                 throw IllegalStateException("database closed")
         }
 
-        val viewModel = AttendanceViewModel(GetMonthlyAttendance(sessions, failing, AttendanceSummarizer.standard()), clock, network)
+        val viewModel = AttendanceViewModel(GetMonthlyAttendance(sessions, failing, AttendanceSummarizer(listOf(MissingExitRule(), ManualEntryRule()))), clock, network)
         advanceUntilIdle()
 
         assertEquals(AttendanceContent.Error("Something went wrong. Try again."), viewModel.state.value.content)

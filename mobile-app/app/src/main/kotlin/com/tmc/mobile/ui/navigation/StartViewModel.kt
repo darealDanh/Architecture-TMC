@@ -2,9 +2,7 @@ package com.tmc.mobile.ui.navigation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.tmc.mobile.domain.port.CertificateStore
-import com.tmc.mobile.domain.port.DeviceKeyStore
-import com.tmc.mobile.domain.port.SessionStore
+import com.tmc.mobile.domain.session.IsDeviceEnrolled
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,9 +17,7 @@ enum class StartDestination {
 
 @HiltViewModel
 class StartViewModel @Inject constructor(
-    private val sessions: SessionStore,
-    private val certificates: CertificateStore,
-    private val keyStore: DeviceKeyStore,
+    private val isDeviceEnrolled: IsDeviceEnrolled,
 ) : ViewModel() {
 
     private val mutableStart = MutableStateFlow<StartDestination?>(null)
@@ -29,8 +25,7 @@ class StartViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val enrolled = sessions.current() != null && certificates.current() != null && keyStore.hasKey()
-            mutableStart.value = if (enrolled) StartDestination.Main else StartDestination.SignIn
+            mutableStart.value = if (isDeviceEnrolled()) StartDestination.Main else StartDestination.SignIn
         }
     }
 }

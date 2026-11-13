@@ -10,7 +10,7 @@ import com.tmc.mobile.domain.pass.PassState
 import com.tmc.mobile.domain.port.NetworkStatus
 import com.tmc.mobile.domain.port.ServerUnreachableException
 import com.tmc.mobile.domain.port.SessionExpiredException
-import com.tmc.mobile.domain.port.SessionStore
+import com.tmc.mobile.domain.session.GetSignedInEmployee
 import com.tmc.mobile.ui.UserMessages
 import com.tmc.mobile.ui.rethrowIfCancelled
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -44,7 +44,7 @@ private data class RenewState(val renewing: Boolean = false, val message: String
 class PassViewModel @Inject constructor(
     observePassState: ObservePassState,
     network: NetworkStatus,
-    sessions: SessionStore,
+    getSignedInEmployee: GetSignedInEmployee,
     private val renewCertificate: RenewCertificate,
 ) : ViewModel() {
 
@@ -53,7 +53,7 @@ class PassViewModel @Inject constructor(
     val state: StateFlow<PassUiState> = combine(
         observePassState(),
         network.isOnline,
-        flow { emit(sessions.current()?.employee) },
+        flow { emit(getSignedInEmployee()) },
         renewState,
     ) { pass, online, employee, renew -> toUiState(pass, online, employee, renew) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), PassUiState())

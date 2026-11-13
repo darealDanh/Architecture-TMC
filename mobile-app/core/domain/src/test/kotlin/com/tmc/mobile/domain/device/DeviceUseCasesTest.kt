@@ -23,7 +23,7 @@ class DeviceUseCasesTest {
     private val keyStore = InMemoryDeviceKeyStore()
     private val sessions = InMemorySessionStore()
     private val certificates = InMemoryCertificateStore()
-    private val signIn = SignInAndEnroll(server, server, keyStore, sessions, certificates)
+    private val signIn = SignInAndEnroll(server, EnrollDevice(server, keyStore, certificates), sessions)
 
     @Test
     fun renewedCertificateHasLaterExpiryAndSameKey() = runTest {
@@ -31,7 +31,7 @@ class DeviceUseCasesTest {
         val original = certificates.current()!!
         clock.advance(Duration.ofDays(3))
 
-        val renewed = RenewCertificate(sessions, server, keyStore, certificates)()
+        val renewed = RenewCertificate(sessions, EnrollDevice(server, keyStore, certificates))()
 
         assertTrue(renewed.expiresAt.isAfter(original.expiresAt))
         assertContentEquals(original.devicePublicKey, renewed.devicePublicKey)

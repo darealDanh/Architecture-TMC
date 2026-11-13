@@ -1,5 +1,6 @@
 package com.tmc.mobile.domain.session
 
+import com.tmc.mobile.domain.device.EnrollDevice
 import com.tmc.mobile.domain.fakes.InMemoryCertificateStore
 import com.tmc.mobile.domain.fakes.InMemoryDeviceKeyStore
 import com.tmc.mobile.domain.fakes.InMemorySessionStore
@@ -28,7 +29,7 @@ class SignInAndEnrollTest {
     private val keyStore = InMemoryDeviceKeyStore()
     private val sessions = InMemorySessionStore()
     private val certificates = InMemoryCertificateStore()
-    private val signIn = SignInAndEnroll(server, server, keyStore, sessions, certificates)
+    private val signIn = SignInAndEnroll(server, EnrollDevice(server, keyStore, certificates), sessions)
 
     @Test
     fun firstSignInCreatesKeyAndStoresCertificate() = runTest {

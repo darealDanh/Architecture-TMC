@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test
 class AttendanceSummarizerTest {
 
     private val month = YearMonth.of(2026, 11)
-    private val summarizer = AttendanceSummarizer.standard()
+    private val summarizer = AttendanceSummarizer(listOf(MissingExitRule(), ManualEntryRule()))
 
     private fun gate(day: Int, entry: String, exit: String?) = AttendanceRecord(
         LocalDate.of(2026, 11, day), "BD-01", LocalTime.parse(entry), exit?.let(LocalTime::parse), EntrySource.GATE,
@@ -57,7 +57,7 @@ class AttendanceSummarizerTest {
                 emptyList()
             }
         }
-        val extended = AttendanceSummarizer(AttendanceSummarizer.standardRules() + lateArrival)
+        val extended = AttendanceSummarizer(listOf(MissingExitRule(), ManualEntryRule()) + lateArrival)
 
         val day = extended.summarize(month, listOf(gate(3, "08:20", null)), fromCache = false).days.single()
 

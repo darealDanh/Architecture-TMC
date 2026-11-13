@@ -24,10 +24,4 @@ class AttendanceSummarizer(private val rules: List<AttendanceRule>) {
         val exit = record.exit ?: return Duration.ZERO
         return Duration.between(entry, exit)
     }
-
-    companion object {
-        fun standardRules(): List<AttendanceRule> = listOf(MissingExitRule(), ManualEntryRule())
-
-        fun standard(): AttendanceSummarizer = AttendanceSummarizer(standardRules())
-    }
 }
