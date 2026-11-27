@@ -8,6 +8,7 @@ target/
 .DS_Store
 .superpowers/
 
+*.tex
 *.txt
 CLAUDE.md
 AGENT.md
@@ -21,3 +22,4 @@ mobile-app/local.properties
 .kotlin/
 *.iml
 ~$*
+mobile-app/gate-station/node_modules/
