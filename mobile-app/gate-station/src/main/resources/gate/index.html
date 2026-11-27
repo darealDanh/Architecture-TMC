@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TMC Gate Station</title>
+  <style>
+    :root {
+      font-family: system-ui, sans-serif;
+      color: #f2f7f7;
+      background: #0b1921;
+      --surface: #132832;
+      --line: #35505b;
+      --muted: #b5c9ce;
+      --accent: #5ad0cb;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100dvh; }
+    header {
+      min-height: 78px;
+      padding: 16px clamp(22px, 4vw, 64px);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .brand { display: flex; align-items: baseline; gap: 16px; white-space: nowrap; }
+    .brand strong { font-size: 26px; letter-spacing: .02em; }
+    .brand span { color: var(--muted); font-size: 14px; text-transform: uppercase; letter-spacing: .15em; }
+    .station-info { display: flex; align-items: center; gap: 24px; color: var(--muted); }
+    #station, #clock { font-variant-numeric: tabular-nums; }
+    #clock { color: #f2f7f7; font-size: 20px; font-weight: 650; min-width: 108px; text-align: right; }
+    main { max-width: 1500px; margin: auto; padding: 24px clamp(22px, 4vw, 64px); }
+    .location { color: var(--accent); font-size: 13px; font-weight: 750; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { margin: 8px 0 4px; font-size: clamp(34px, 4vw, 54px); letter-spacing: -.04em; line-height: 1.08; }
+    .instruction { color: var(--muted); font-size: 17px; margin: 0 0 18px; }
+    .gate-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr); gap: 18px; }
+    .scanner, .decision { min-width: 0; border: 1px solid var(--line); background: var(--surface); }
+    .scanner { padding: 16px; display: flex; flex-direction: column; }
+    .camera {
+      position: relative;
+      background: #071219;
+      aspect-ratio: 16 / 9;
+      min-height: 310px;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+    }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    .scan-target {
+      position: absolute;
+      width: min(52%, 300px);
+      aspect-ratio: 1;
+      border: 3px solid var(--accent);
+      border-radius: 8px;
+      box-shadow: 0 0 0 999px #07121969;
+      pointer-events: none;
+    }
+    .viewfinder-label {
+      position: absolute;
+      left: 18px;
+      bottom: 16px;
+      color: #f2f7f7;
+      font-size: 12px;
+      font-weight: 750;
+      letter-spacing: .12em;
+      pointer-events: none;
+    }
+    .scanner-controls { display: flex; align-items: center; gap: 20px; padding: 16px 0 2px; }
+    button {
+      flex: 0 0 auto;
+      min-width: 144px;
+      padding: 12px 18px;
+      color: #082027;
+      background: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      font: inherit;
+      font-weight: 750;
+      cursor: pointer;
+    }
+    button:hover { background: #9fe7e2; }
+    button:active { transform: translateY(1px); }
+    button:focus-visible { outline: 3px solid #f2f7f7; outline-offset: 3px; }
+    button:disabled { opacity: .55; cursor: default; }
+    .scanner-status { min-width: 0; }
+    .scanner-status strong { display: block; color: var(--accent); font-size: 12px; letter-spacing: .13em; }
+    .scanner-status p { margin: 4px 0 0; color: var(--muted); font-size: 14px; line-height: 1.35; }
+    .decision {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: clamp(22px, 3vw, 42px);
+      min-height: 450px;
+    }
+    .decision-caption, .decision-footer { color: var(--muted); font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    .outcome { border-left: 6px solid var(--line); padding-left: clamp(18px, 2vw, 28px); }
+    .outcome.checking { border-color: var(--accent); }
+    .outcome.passed { border-color: #8ae3a5; }
+    .outcome.rejected, .outcome.error { border-color: #ffa79c; }
+    .outcome .label { color: var(--muted); font-size: 14px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    .outcome.passed .label, .outcome.passed .headline { color: #a7f3b9; }
+    .outcome.rejected .label, .outcome.rejected .headline, .outcome.error .label, .outcome.error .headline { color: #ffb5aa; }
+    .outcome .headline { display: block; margin: 8px 0; font-size: clamp(42px, 5vw, 82px); font-weight: 850; letter-spacing: -.055em; line-height: 1.05; }
+    .outcome .detail { display: block; max-width: 38ch; color: #d2e1e4; font-size: clamp(16px, 1.5vw, 20px); line-height: 1.45; }
+    .decision-footer { border-top: 1px solid var(--line); padding-top: 18px; }
+    .guidance { margin: 12px 0 0; color: var(--muted); font-size: 14px; }
+    @media (max-width: 900px) {
+      .gate-layout { grid-template-columns: 1fr; }
+      .decision { min-height: 310px; }
+    }
+    @media (max-width: 620px) {
+      header { align-items: flex-start; flex-direction: column; gap: 8px; }
+      .station-info { justify-content: space-between; width: 100%; }
+      .camera { min-height: 250px; }
+      .scanner-controls { align-items: flex-start; flex-direction: column; gap: 12px; }
+    }
+    @media (prefers-reduced-motion: reduce) { button:active { transform: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><strong>TMC</strong><span>Access control</span></div>
+    <div class="station-info"><span id="station">Loading gate...</span><time id="clock"></time></div>
+  </header>
+  <main>
+    <div class="location" id="location">Entry station</div>
+    <h1>Present your pass</h1>
+    <p class="instruction">Hold your QR code steady in front of the scanner.</p>
+    <div class="gate-layout">
+      <section class="scanner" aria-label="QR scanner">
+        <div class="camera">
+          <video id="camera" muted playsinline aria-label="Gate camera preview"></video>
+          <div class="scan-target" aria-hidden="true"></div>
+          <span class="viewfinder-label">ALIGN QR CODE IN FRAME</span>
+        </div>
+        <div class="scanner-controls">
+          <button id="start" type="button" aria-pressed="false">Start camera</button>
+          <div class="scanner-status">
+            <strong id="camera-state">CAMERA OFF</strong>
+            <p id="camera-status" role="status">Allow camera access to start scanning.</p>
+          </div>
+        </div>
+      </section>
+      <section class="decision" aria-label="Gate decision">
+        <span class="decision-caption">Access decision</span>
+        <div id="result" class="outcome idle" role="status" aria-live="polite">
+          <span class="label">STATION STANDBY</span>
+          <span class="headline">SCANNER OFF</span>
+          <span class="detail">Start the camera to check an access pass.</span>
+        </div>
+        <span class="decision-footer">One person at a time</span>
+      </section>
+    </div>
+    <p class="guidance">After a decision, move your pass away before presenting the next one.</p>
+  </main>
+  <script type="module">
+    import QrScanner from '/qr-scanner.min.js';
+
+    const video = document.querySelector('#camera');
+    const start = document.querySelector('#start');
+    const cameraState = document.querySelector('#camera-state');
+    const cameraStatus = document.querySelector('#camera-status');
+    const result = document.querySelector('#result');
+    const label = result.querySelector('.label');
+    const headline = result.querySelector('.headline');
+    const detail = result.querySelector('.detail');
+    const messages = {
+      INVALID_FORMAT: 'Unrecognised QR code. Try again.',
+      INVALID_CERTIFICATE: 'Device certificate could not be verified.',
+      EXPIRED_CERTIFICATE: 'Device certificate has expired.',
+      INVALID_SIGNATURE: 'Pass signature could not be verified.',
+      EXPIRED_PASS: 'Pass expired. Refresh your QR code and try again.',
+      UNAUTHORIZED: 'Employee is not authorised for this factory.',
+      REPLAY: 'This QR code has already been used.',
+    };
+    let cameraRunning = false;
+    let checking = false;
+    let lastPass = '';
+    let lastSeenAt = 0;
+    let nextScanAt = 0;
+    let resetTimer;
+
+    function showIdle() {
+      result.className = 'outcome idle';
+      label.textContent = cameraRunning ? 'READY FOR PASS' : 'STATION STANDBY';
+      headline.textContent = cameraRunning ? 'SCAN TO ENTER' : 'SCANNER OFF';
+      detail.textContent = cameraRunning
+        ? 'Hold your QR code inside the frame.'
+        : 'Start the camera to check an access pass.';
+    }
+
+    function showDecision(entry) {
+      const passed = entry.status === 'PASSED';
+      const rejected = entry.status === 'REJECTED';
+      result.className = `outcome ${passed ? 'passed' : rejected ? 'rejected' : 'error'}`;
+      label.textContent = passed ? 'ENTRY APPROVED' : rejected ? 'ENTRY DENIED' : 'GATE UNAVAILABLE';
+      headline.textContent = passed ? 'PASSED' : rejected ? 'NO ENTRY' : 'SEE GUARD';
+      detail.textContent = passed
+        ? `Pass verified for employee ${entry.employeeId}.`
+        : (messages[entry.reason] || 'Please contact security staff.');
+    }
+
+    const scanner = new QrScanner(video, async ({ data }) => {
+      if (!cameraRunning) return;
+      const now = Date.now();
+      if (data === lastPass && now - lastSeenAt < 1500) {
+        lastSeenAt = now;
+        return;
+      }
+      if (checking || now < nextScanAt) {
+        if (data === lastPass) lastSeenAt = now;
+        return;
+      }
+      checking = true;
+      lastPass = data;
+      lastSeenAt = now;
+      nextScanAt = now + 2500;
+      clearTimeout(resetTimer);
+      result.className = 'outcome checking';
+      label.textContent = 'VERIFYING PASS';
+      headline.textContent = 'CHECKING';
+      detail.textContent = 'Please wait for the access decision.';
+      cameraStatus.textContent = 'Pass detected. Checking access.';
+      try {
+        const response = await fetch('/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: data,
+        });
+        if (!response.ok) throw new Error((await response.json()).error);
+        showDecision(await response.json());
+      } catch (error) {
+        result.className = 'outcome error';
+        label.textContent = 'GATE UNAVAILABLE';
+        headline.textContent = 'SEE GUARD';
+        detail.textContent = 'Unable to check this pass. Please contact security staff.';
+        console.error(error);
+      } finally {
+        checking = false;
+        if (cameraRunning) cameraStatus.textContent = 'Scanner active. Present the next pass.';
+        resetTimer = setTimeout(() => { if (cameraRunning) showIdle(); }, 5000);
+      }
+    }, { returnDetailedScanResult: true, highlightScanRegion: false, maxScansPerSecond: 12 });
+
+    start.addEventListener('click', async () => {
+      if (cameraRunning) {
+        scanner.stop();
+        cameraRunning = false;
+        clearTimeout(resetTimer);
+        start.textContent = 'Start camera';
+        start.setAttribute('aria-pressed', 'false');
+        cameraState.textContent = 'CAMERA OFF';
+        cameraStatus.textContent = 'Allow camera access to start scanning.';
+        showIdle();
+        return;
+      }
+      start.disabled = true;
+      cameraState.textContent = 'CONNECTING';
+      try {
+        await scanner.start();
+        cameraRunning = true;
+        showIdle();
+        start.textContent = 'Stop camera';
+        start.setAttribute('aria-pressed', 'true');
+        cameraState.textContent = 'SCANNER ACTIVE';
+        cameraStatus.textContent = 'Hold the QR code inside the frame.';
+      } catch (error) {
+        cameraState.textContent = 'CAMERA UNAVAILABLE';
+        cameraStatus.textContent = error?.message || String(error || 'No camera or permission');
+        result.className = 'outcome error';
+        label.textContent = 'CAMERA UNAVAILABLE';
+        headline.textContent = 'SEE GUARD';
+        detail.textContent = 'Check the camera connection and browser permission.';
+      } finally {
+        start.disabled = false;
+      }
+    });
+
+    function updateClock() {
+      const time = document.querySelector('#clock');
+      time.dateTime = new Date().toISOString();
+      time.textContent = new Intl.DateTimeFormat(undefined, {
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      }).format(new Date());
+    }
+
+    fetch('/config').then(response => response.json()).then(config => {
+      document.querySelector('#station').textContent = config.gate;
+      document.querySelector('#location').textContent = `${config.factory} / ${config.direction}`;
+    }).catch(error => {
+      cameraState.textContent = 'STATION UNAVAILABLE';
+      cameraStatus.textContent = error?.message || String(error);
+    });
+    updateClock();
+    setInterval(updateClock, 1000);
+  </script>
+</body>
+</html>
